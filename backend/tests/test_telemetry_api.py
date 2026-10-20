@@ -15,9 +15,10 @@ def test_root_and_healthcheck(client):
 
 def test_ingest_valid_telemetry_and_calculations(client):
     """Test valid ESP32 sensor telemetry ingestion, power and efficiency derivations."""
+    t = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     payload = {
         "device_id": "SOLAR-ESP32-01",
-        "timestamp": "2026-10-20T12:00:00Z",
+        "timestamp": t,
         "voltage_v": 18.42,
         "current_a": 2.31,
         "temperature_c": 31.7,
@@ -47,9 +48,10 @@ def test_ingest_valid_telemetry_and_calculations(client):
 
 def test_duplicate_telemetry_handling(client):
     """Test duplicate record detection and 409 Conflict rejection."""
+    t = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
     payload = {
         "device_id": "SOLAR-ESP32-01",
-        "timestamp": "2026-10-20T12:15:00Z",
+        "timestamp": t,
         "voltage_v": 18.5,
         "current_a": 2.2,
         "temperature_c": 32.0,
