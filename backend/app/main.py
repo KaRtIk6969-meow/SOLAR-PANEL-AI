@@ -3,6 +3,7 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine
+import app.models  # Register all models on Base.metadata
 from app.api.v1.router import api_v1_router
 
 
