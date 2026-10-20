@@ -1,7 +1,7 @@
 {
   "model_name": "LinearRegression",
-  "model_version": "lin_v20261020_122908",
-  "training_timestamp": "2026-10-20T12:29:08.460420+00:00",
+  "model_version": "lin_v20261020_135951",
+  "training_timestamp": "2026-10-20T13:59:51.432821+00:00",
   "feature_names": [
     "voltage_v",
     "current_a",
@@ -15,6 +15,6 @@
   "mae": 0.1061,
   "rmse": 0.1264,
   "r2_score": 0.9995,
-  "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_122908.joblib",
+  "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_135951.joblib",
   "is_best": true
 }

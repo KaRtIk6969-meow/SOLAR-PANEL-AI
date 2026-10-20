@@ -38,6 +38,33 @@ export interface BackendDeviceStatusResponse {
   is_reporting: boolean;
 }
 
+export interface BackendDeviceTelemetryStatsResponse {
+  device_id: string;
+  device_name: string;
+  connection_status: 'ONLINE' | 'STALE' | 'OFFLINE';
+  last_seen_at: string | null;
+  seconds_since_last_seen: number | null;
+  total_packets: number;
+  valid_readings: number;
+  invalid_readings: number;
+  missing_values: number;
+  rejected_readings: number;
+  demo_records_count: number;
+  real_valid_records: number;
+  min_training_threshold: number;
+  training_readiness: 'READY' | 'INSUFFICIENT_DATA';
+  recommendation: string;
+  sensor_status: {
+    voltage: string;
+    current: string;
+    temperature: string;
+    irradiance: string;
+  };
+  packet_interval_sec: number | null;
+  api_response_status: string;
+}
+
+
 export interface BackendAlertResponse {
   id: number;
   device_id: string;
@@ -185,6 +212,64 @@ export async function getDeviceStatus(deviceId: string): Promise<BackendDeviceSt
     return null;
   }
 }
+
+/**
+ * Fetch detailed device telemetry statistics, data quality metrics, and ML dataset readiness
+ */
+export async function getDeviceTelemetryStats(deviceId: string): Promise<BackendDeviceTelemetryStatsResponse | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry-stats`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn(`[SolarAI API] getDeviceTelemetryStats error for ${deviceId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Generate CSV export download link
+ */
+export function getExportCsvUrl(deviceId: string, includeDemo = false): string {
+  return `${API_BASE_URL}/api/v1/telemetry/export/csv?device_id=${encodeURIComponent(deviceId)}&include_demo=${includeDemo}`;
+}
+
+/**
+ * Inject simulated telemetry packet tagged with data_quality='DEMO' (Development Only)
+ */
+export async function injectDemoTestTelemetry(deviceId: string): Promise<BackendTelemetryResponse | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/telemetry/demo-test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.data;
+  } catch (err) {
+    console.warn(`[SolarAI API] injectDemoTestTelemetry error:`, err);
+    return null;
+  }
+}
+
+/**
+ * Clear only demo simulated telemetry packets (Real hardware data is 100% untouched)
+ */
+export async function clearDemoTelemetry(deviceId?: string): Promise<{ deleted_count: number }> {
+  try {
+    const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : '';
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/telemetry/demo${query}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) return { deleted_count: 0 };
+    return await res.json();
+  } catch (err) {
+    console.warn(`[SolarAI API] clearDemoTelemetry error:`, err);
+    return { deleted_count: 0 };
+  }
+}
+
 
 /**
  * Fetch alerts from backend

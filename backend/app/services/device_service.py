@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from app.models.device import Device
-from app.schemas.device import DeviceCreate, DeviceUpdate, DeviceStatusResponse
+from app.schemas.device import DeviceCreate, DeviceUpdate, DeviceStatusResponse, DeviceTelemetryStatsResponse
 from app.core.config import settings
 
 

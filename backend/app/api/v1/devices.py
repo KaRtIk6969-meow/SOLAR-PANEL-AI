@@ -7,6 +7,7 @@ from app.schemas.device import (
     DeviceUpdate,
     DeviceResponse,
     DeviceStatusResponse,
+    DeviceTelemetryStatsResponse,
 )
 from app.services.device_service import (
     create_device,
