@@ -16,7 +16,7 @@ class TelemetryCreate(BaseModel):
         examples=["SOLAR-ESP32-01"]
     )
     timestamp: Optional[datetime] = Field(
-        default=None,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="ISO 8601 reading timestamp. Defaults to server UTC now if omitted or null.",
         examples=["2026-10-20T12:00:00Z"]
     )
@@ -56,12 +56,21 @@ class TelemetryCreate(BaseModel):
             raise ValueError(f"{info.field_name} must be a valid finite number, received NaN or Infinity")
         return round(float(v), 3)
 
-    @field_validator("timestamp")
+    @field_validator("timestamp", mode="before")
     @classmethod
-    def validate_timestamp(cls, v: Optional[datetime]) -> datetime:
+    def validate_timestamp(cls, v) -> datetime:
         now = datetime.now(timezone.utc)
-        if v is None:
+        if v is None or v == "":
             return now
+            
+        if isinstance(v, str):
+            try:
+                # Handle ISO 8601 strings
+                if v.endswith("Z"):
+                    v = v[:-1] + "+00:00"
+                v = datetime.fromisoformat(v)
+            except ValueError:
+                raise ValueError("Invalid ISO 8601 timestamp format")
         
         # Ensure timezone awareness
         if v.tzinfo is None:
@@ -69,7 +78,7 @@ class TelemetryCreate(BaseModel):
             
         # Reject future timestamps beyond 5 minutes (clock drift margin)
         if v > now + timedelta(minutes=5):
-            raise ValueError(f"Timestamp cannot be in the future (exceeds clock drift threshold of 5 minutes)")
+            raise ValueError("Timestamp cannot be in the future (exceeds clock drift threshold of 5 minutes)")
             
         # Reject dates older than 1 year
         if v < now - timedelta(days=365):

@@ -21,7 +21,7 @@ app = FastAPI(
     description=settings.DESCRIPTION,
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    openapi_url="/openapi.json",
     lifespan=lifespan,
 )
 

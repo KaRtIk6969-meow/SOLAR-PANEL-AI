@@ -4,9 +4,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
+from app.main import app as fastapi_app
 from app.core.database import Base, get_db
-import app.models  # noqa: F401 - Register models for test DB
+from app.models import Device, TelemetryReading  # noqa: F401 - Register models for test DB
 
 # Use in-memory SQLite database with StaticPool for isolated, thread-safe test execution
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -40,7 +40,7 @@ def client(db_session):
         finally:
             pass
 
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    fastapi_app.dependency_overrides[get_db] = override_get_db
+    with TestClient(fastapi_app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides.clear()
