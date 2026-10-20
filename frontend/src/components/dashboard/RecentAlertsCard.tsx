@@ -100,7 +100,7 @@ export function RecentAlertsCard({ alerts, onResolve, className = '' }: RecentAl
                 </p>
 
                 <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-[11px] text-slate-500">
+                  <span suppressHydrationWarning className="text-[11px] text-slate-500">
                     {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
 

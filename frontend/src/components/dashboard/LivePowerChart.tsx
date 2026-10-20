@@ -23,6 +23,11 @@ interface LivePowerChartProps {
 export function LivePowerChart({ data, className = '' }: LivePowerChartProps) {
   const [showTheoretical, setShowTheoretical] = useState(false);
   const [showIrradiance, setShowIrradiance] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Format data for Recharts
   const formattedData = data.map((reading) => {
@@ -84,6 +89,11 @@ export function LivePowerChart({ data, className = '' }: LivePowerChartProps) {
 
       {/* Main Recharts Area */}
       <div className="h-72 sm:h-80 w-full">
+        {!mounted ? (
+          <div className="h-full w-full rounded-xl bg-slate-800/20 border border-slate-800/40 animate-pulse flex items-center justify-center text-xs text-slate-500">
+            Initializing Live Telemetry Stream...
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={formattedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
@@ -233,6 +243,7 @@ export function LivePowerChart({ data, className = '' }: LivePowerChartProps) {
             )}
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </div>
 
       {/* Legend & Summary Footer */}

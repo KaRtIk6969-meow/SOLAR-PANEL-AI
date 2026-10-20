@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SolarAI • Solar Panel Monitoring & AI Efficiency Prediction",
+  title: "SolarAI | Solar Panel Monitoring & AI Efficiency Prediction",
   description: "Next-generation solar IoT monitoring dashboard with physics-based machine learning efficiency forecasting and fault diagnosis.",
 };
 

@@ -117,7 +117,7 @@ export function DeviceStatusCard({ device, lastUpdated, className = '' }: Device
           <Clock className="w-3.5 h-3.5 text-slate-400" />
           <span>Last ping:</span>
         </div>
-        <span className="font-mono text-slate-300">
+        <span suppressHydrationWarning className="font-mono text-slate-300">
           {lastUpdated.toLocaleTimeString()} (Active)
         </span>
       </div>

@@ -110,7 +110,7 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
 
       {/* Atmospheric summary bar */}
       <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs">
-        <span className="text-slate-400">Atmospheric Clearness Index ($K_t$)</span>
+        <span className="text-slate-400">Atmospheric Clearness Index (Kt)</span>
         <span className="font-mono font-bold text-amber-400">
           0.74 (Clear Sky)
         </span>
