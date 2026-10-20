@@ -90,3 +90,90 @@ def compute_device_status(device: Device) -> DeviceStatusResponse:
         seconds_since_last_seen=round(delta_sec, 1),
         is_reporting=(status == "ONLINE"),
     )
+
+
+def compute_device_telemetry_stats(db: Session, device: Device) -> DeviceTelemetryStatsResponse:
+    """
+    Computes real-time data collection statistics, data quality metrics,
+    and ML training readiness for an ESP32 hardware device.
+    """
+    from app.models.sensor_reading import SensorReading
+
+    status_info = compute_device_status(device)
+    all_readings = (
+        db.query(SensorReading)
+        .filter(SensorReading.device_id == device.id)
+        .order_by(SensorReading.timestamp.desc())
+        .all()
+    )
+
+    total_packets = len(all_readings)
+    demo_records_count = sum(1 for r in all_readings if r.data_quality == "DEMO")
+    real_records = [r for r in all_readings if r.data_quality != "DEMO"]
+    valid_readings = sum(1 for r in real_records if r.data_quality == "GOOD")
+    invalid_readings = sum(1 for r in real_records if r.data_quality != "GOOD")
+    missing_values = sum(1 for r in real_records if r.voltage_v is None or r.current_a is None or r.power_w is None)
+    rejected_readings = sum(1 for r in real_records if r.data_quality in ("SUSPECT_SHORT_CIRCUIT", "CORRUPT"))
+
+    real_valid_records = valid_readings
+    min_threshold = 10
+    training_readiness = "READY" if real_valid_records >= min_threshold else "INSUFFICIENT_DATA"
+
+    if real_valid_records == 0:
+        recommendation = "No real hardware telemetry received yet. Connect ESP32 to begin data collection."
+    elif real_valid_records < min_threshold:
+        recommendation = f"{min_threshold - real_valid_records} more valid packets required for minimum ML model training."
+    elif real_valid_records < 50:
+        recommendation = "More data recommended for reliable model evaluation."
+    else:
+        recommendation = "Dataset optimal for high-accuracy XGBoost & Random Forest regression."
+
+    # Sensor status diagnostics
+    latest = all_readings[0] if all_readings else None
+    if status_info.status == "OFFLINE" or latest is None:
+        sensor_status = {
+            "voltage": "Offline",
+            "current": "Offline",
+            "temperature": "Offline",
+            "irradiance": "Offline",
+        }
+    else:
+        sensor_status = {
+            "voltage": "Active" if latest.voltage_v > 0.0 else "Warning",
+            "current": "Active" if latest.current_a >= 0.0 else "Warning",
+            "temperature": "Critical" if latest.temperature_c > 75.0 else ("Active" if latest.temperature_c > -20.0 else "Warning"),
+            "irradiance": "Active" if latest.irradiance_w_m2 >= 0.0 else "Warning",
+        }
+
+    # Packet interval
+    packet_interval = None
+    if len(all_readings) >= 2:
+        deltas = []
+        for i in range(min(5, len(all_readings) - 1)):
+            d = (all_readings[i].timestamp - all_readings[i+1].timestamp).total_seconds()
+            if d > 0:
+                deltas.append(d)
+        if deltas:
+            packet_interval = round(sum(deltas) / len(deltas), 1)
+
+    return DeviceTelemetryStatsResponse(
+        device_id=device.id,
+        device_name=device.name,
+        connection_status=status_info.status,
+        last_seen_at=status_info.last_seen_at,
+        seconds_since_last_seen=status_info.seconds_since_last_seen,
+        total_packets=total_packets,
+        valid_readings=valid_readings,
+        invalid_readings=invalid_readings,
+        missing_values=missing_values,
+        rejected_readings=rejected_readings,
+        demo_records_count=demo_records_count,
+        real_valid_records=real_valid_records,
+        min_training_threshold=min_threshold,
+        training_readiness=training_readiness,
+        recommendation=recommendation,
+        sensor_status=sensor_status,
+        packet_interval_sec=packet_interval,
+        api_response_status="200 OK - Operational",
+    )
+

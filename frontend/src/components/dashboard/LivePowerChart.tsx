@@ -30,9 +30,9 @@ export function LivePowerChart({ data, className = '' }: LivePowerChartProps) {
   }, []);
 
   // Format data for Recharts
-  const formattedData = data.map((reading) => {
+  const formattedData = (data || []).map((reading) => {
     const time = new Date(reading.timestamp);
-    const timeLabel = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeLabel = isNaN(time.getTime()) ? '--:--' : time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     return {
       time: timeLabel,
@@ -44,6 +44,20 @@ export function LivePowerChart({ data, className = '' }: LivePowerChartProps) {
       efficiency: reading.efficiency,
     };
   });
+
+  if (formattedData.length === 0) {
+    return (
+      <div className={`p-5 lg:p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 flex flex-col items-center justify-center text-center min-h-[380px] ${className}`}>
+        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3 text-amber-400">
+          <Zap className="w-6 h-6" />
+        </div>
+        <h4 className="text-base font-bold text-white">No Telemetry Recorded Yet</h4>
+        <p className="text-xs text-slate-400 max-w-sm mt-1 mb-3">
+          Waiting for sensor telemetry from edge microcontroller or FastAPI database. Real-time generation curves will render automatically upon packet reception.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={`p-5 lg:p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 flex flex-col ${className}`}>

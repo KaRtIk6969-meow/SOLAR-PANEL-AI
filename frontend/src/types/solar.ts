@@ -21,6 +21,20 @@ export type SimulationScenario =
   | 'open_circuit' 
   | 'sensor_drift';
 
+export type DataSource = 'api' | 'mock';
+
+export interface PredictionItem {
+  id: string;
+  timestamp: string;
+  target: string;
+  predictedValue: number;
+  actualValue: number | null;
+  residual: number | null;
+  deviationPct: number | null;
+  alertStatus: string;
+  modelVersion: string;
+}
+
 export interface TelemetryReading {
   id: string;
   timestamp: string;

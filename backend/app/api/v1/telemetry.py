@@ -115,3 +115,133 @@ def get_history(
 )
 def get_dashboard_data(device_id: str, db: Session = Depends(get_db)):
     return get_dashboard_summary(db, device_id)
+
+
+@router.get(
+    "/export/csv",
+    summary="Download Telemetry Dataset as CSV",
+    description="Exports recorded telemetry readings as a CSV spreadsheet. By default exports valid real data; demo data can be included if requested."
+)
+def export_telemetry_csv(
+    device_id: str = Query(default="SOLAR-ESP32-01", description="Device ID to export"),
+    include_demo: bool = Query(default=False, description="Whether to include demo/simulated records"),
+    db: Session = Depends(get_db)
+):
+    import io
+    import csv
+    from fastapi.responses import Response
+    from app.models.sensor_reading import SensorReading
+
+    query = db.query(SensorReading).filter(SensorReading.device_id == device_id)
+    if not include_demo:
+        query = query.filter(SensorReading.data_quality != "DEMO")
+    readings = query.order_by(SensorReading.timestamp.asc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "id", "device_id", "timestamp", "voltage_v", "current_a", 
+        "temperature_c", "irradiance_w_m2", "power_w", "efficiency_pct", 
+        "data_quality", "firmware_version"
+    ])
+    for r in readings:
+        writer.writerow([
+            r.id, r.device_id, r.timestamp.isoformat() if r.timestamp else "",
+            r.voltage_v, r.current_a, r.temperature_c, r.irradiance_w_m2,
+            r.power_w, r.efficiency_pct if r.efficiency_pct is not None else "",
+            r.data_quality, r.firmware_version or ""
+        ])
+
+    csv_data = output.getvalue()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=solar_telemetry_{device_id}.csv"
+        }
+    )
+
+
+@router.post(
+    "/demo-test",
+    response_model=TelemetryIngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Inject Test Telemetry Packet (Development Only)",
+    description="Injects a simulated sensor telemetry packet tagged explicitly with data_quality='DEMO'. Isolated from real hardware data and strictly excluded from ML model training."
+)
+def ingest_demo_telemetry(
+    payload: Optional[TelemetryCreate] = None,
+    db: Session = Depends(get_db)
+):
+    from datetime import datetime, timezone
+    from app.services.device_service import get_or_create_device
+    from app.models.sensor_reading import SensorReading
+    import random
+
+    now = datetime.now(timezone.utc)
+    if payload:
+        dev_id = payload.device_id
+        v = payload.voltage_v
+        curr = payload.current_a
+        temp = payload.temperature_c
+        irr = payload.irradiance_w_m2
+    else:
+        dev_id = "SOLAR-ESP32-01"
+        v = round(18.2 + random.uniform(0.1, 1.2), 2)
+        curr = round(2.2 + random.uniform(0.1, 0.5), 2)
+        temp = round(31.0 + random.uniform(0.5, 3.0), 1)
+        irr = round(800.0 + random.uniform(10.0, 80.0), 1)
+
+    pwr = round(v * curr, 2)
+    eff = round((pwr / (0.65 * irr)) * 100.0, 2) if irr > 20 else None
+
+    device = get_or_create_device(db, dev_id)
+    reading = SensorReading(
+        device_id=dev_id,
+        timestamp=now,
+        voltage_v=v,
+        current_a=curr,
+        temperature_c=temp,
+        irradiance_w_m2=irr,
+        power_w=pwr,
+        efficiency_pct=eff,
+        data_quality="DEMO",
+        firmware_version="DEMO-SIM-1.0",
+        created_at=now,
+    )
+    db.add(reading)
+    device.last_seen_at = now
+    db.commit()
+    db.refresh(reading)
+
+    return TelemetryIngestResponse(
+        status="success",
+        message="Demo test packet recorded with data_quality='DEMO'. Isolated from ML training.",
+        data=TelemetryResponse.model_validate(reading)
+    )
+
+
+@router.delete(
+    "/demo",
+    summary="Clear Demo Data",
+    description="Deletes all simulated records tagged with data_quality='DEMO'. Real hardware telemetry is 100% protected and cannot be deleted."
+)
+def clear_demo_data(
+    device_id: Optional[str] = Query(default=None, description="Optional device ID filter"),
+    db: Session = Depends(get_db)
+):
+    from app.models.sensor_reading import SensorReading
+
+    query = db.query(SensorReading).filter(SensorReading.data_quality == "DEMO")
+    if device_id:
+        query = query.filter(SensorReading.device_id == device_id)
+    
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "status": "success",
+        "deleted_count": deleted_count,
+        "message": f"Successfully deleted {deleted_count} demo test records. Real hardware data untouched."
+    }
+

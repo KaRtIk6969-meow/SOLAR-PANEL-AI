@@ -36,3 +36,25 @@ class DeviceStatusResponse(BaseModel):
     last_seen_at: Optional[datetime] = None
     seconds_since_last_seen: Optional[float] = None
     is_reporting: bool
+
+
+class DeviceTelemetryStatsResponse(BaseModel):
+    device_id: str
+    device_name: str
+    connection_status: str  # ONLINE, STALE, OFFLINE
+    last_seen_at: Optional[datetime] = None
+    seconds_since_last_seen: Optional[float] = None
+    total_packets: int
+    valid_readings: int
+    invalid_readings: int
+    missing_values: int
+    rejected_readings: int
+    demo_records_count: int
+    real_valid_records: int
+    min_training_threshold: int = 10
+    training_readiness: str  # READY, INSUFFICIENT_DATA
+    recommendation: str
+    sensor_status: dict[str, str]
+    packet_interval_sec: Optional[float] = None
+    api_response_status: str = "200 OK - Operational"
+

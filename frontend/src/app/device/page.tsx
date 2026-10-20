@@ -23,11 +23,12 @@ export default function DevicePage() {
   const sampleJson = JSON.stringify(
     {
       device_id: device.id,
-      timestamp: telemetry.timestamp,
-      voltage: Number(telemetry.voltage.toFixed(2)),
-      current: Number(telemetry.current.toFixed(2)),
-      temperature: Number(telemetry.temperature.toFixed(1)),
-      irradiance: telemetry.irradiance,
+      timestamp: telemetry?.timestamp || '2026-10-20T12:00:00Z',
+      voltage_v: telemetry?.voltage != null ? Number(telemetry.voltage.toFixed(2)) : 18.42,
+      current_a: telemetry?.current != null ? Number(telemetry.current.toFixed(2)) : 2.31,
+      temperature_c: telemetry?.temperature != null ? Number(telemetry.temperature.toFixed(1)) : 31.7,
+      irradiance_w_m2: telemetry?.irradiance != null ? telemetry.irradiance : 812.0,
+      firmware_version: device.firmwareVersion || "1.0.0",
     },
     null,
     2
@@ -40,29 +41,28 @@ export default function DevicePage() {
 
 const char* ssid = "COLLEGE_WIFI_SSID";
 const char* password = "WIFI_PASSWORD";
-const char* serverUrl = "http://192.168.1.50:8000/api/v1/telemetry/ingest";
-const char* deviceToken = "solarai_token_esp32_dev_01";
+const char* serverUrl = "http://<BACKEND_HOST_IP>:8000/api/v1/telemetry";
 
 void sendTelemetry(float voltage, float current, float temp, float lux) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverUrl);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("X-Device-Token", deviceToken);
 
-    StaticJsonDocument<200> doc;
+    StaticJsonDocument<256> doc;
     doc["device_id"] = "${device.id}";
-    doc["voltage"] = voltage;
-    doc["current"] = current;
-    doc["temperature"] = temp;
-    doc["irradiance"] = lux;
+    doc["voltage_v"] = voltage;
+    doc["current_a"] = current;
+    doc["temperature_c"] = temp;
+    doc["irradiance_w_m2"] = lux;
+    doc["firmware_version"] = "1.0.0";
 
     String requestBody;
     serializeJson(doc, requestBody);
     int httpResponseCode = http.POST(requestBody);
     http.end();
   }
-}`;
+}`;;
 
   const copyToClipboard = (text: string, type: 'payload' | 'code') => {
     navigator.clipboard.writeText(text);

@@ -35,7 +35,7 @@ export default function HealthPage() {
         </div>
 
         <span className="px-3 py-1 rounded-xl text-xs font-bold uppercase bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-          Grade {health.grade}
+          Grade {health?.grade || '--'}
         </span>
       </div>
 
@@ -63,10 +63,12 @@ export default function HealthPage() {
                     <Thermometer className="w-4 h-4 text-rose-400" />
                     Thermal Derating Penalty
                   </span>
-                  <span className="font-mono font-bold text-rose-400">-{health.thermalLossPct}%</span>
+                  <span className="font-mono font-bold text-rose-400">
+                    {health?.thermalLossPct != null ? `-${health.thermalLossPct}%` : '--'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Panel cell temperature currently at {telemetry.temperature.toFixed(1)}°C. Every degree above 25°C STC baseline causes ~0.38% power drop.
+                  Panel cell temperature currently at {telemetry?.temperature != null ? `${telemetry.temperature.toFixed(1)}°C` : '--'}. Every degree above 25°C STC baseline causes ~0.38% power drop.
                 </p>
               </div>
 
@@ -77,7 +79,9 @@ export default function HealthPage() {
                     <CloudFog className="w-4 h-4 text-amber-400" />
                     Optical Soiling & Dust Factor
                   </span>
-                  <span className="font-mono font-bold text-amber-400">-{health.soilingLossPct}%</span>
+                  <span className="font-mono font-bold text-amber-400">
+                    {health?.soilingLossPct != null ? `-${health.soilingLossPct}%` : '--'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-400">
                   Calculated by comparing peak clear-sky irradiance against the current short-circuit current ratio.

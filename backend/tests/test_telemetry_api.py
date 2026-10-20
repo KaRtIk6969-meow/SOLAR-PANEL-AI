@@ -230,3 +230,96 @@ def test_anomaly_detection_open_circuit(client):
     data = res.json()["data"]
     assert data["is_anomaly"] is True
     assert "Open Circuit" in data["anomaly_notes"]
+
+
+def test_device_telemetry_stats_and_quality_audit(client):
+    """Test device telemetry statistics, sensor diagnostics, and data quality metrics."""
+    dev_id = "SOLAR-ESP32-STATS"
+    
+    # 1. Ingest 3 real readings
+    for i in range(3):
+        client.post("/api/v1/telemetry", json={
+            "device_id": dev_id,
+            "timestamp": (datetime.now(timezone.utc) - timedelta(seconds=i * 5)).isoformat(),
+            "voltage_v": 18.5,
+            "current_a": 2.4,
+            "temperature_c": 32.0,
+            "irradiance_w_m2": 820.0
+        })
+
+    # 2. Query stats
+    res = client.get(f"/api/v1/devices/{dev_id}/telemetry-stats")
+    assert res.status_code == status.HTTP_200_OK
+    data = res.json()
+    assert data["device_id"] == dev_id
+    assert data["total_packets"] == 3
+    assert data["valid_readings"] == 3
+    assert data["real_valid_records"] == 3
+    assert data["min_training_threshold"] == 10
+    assert data["training_readiness"] == "INSUFFICIENT_DATA"
+    assert "more valid packets required" in data["recommendation"]
+    assert data["sensor_status"]["voltage"] == "Active"
+
+
+def test_csv_export_telemetry(client):
+    """Test exporting recorded telemetry as CSV."""
+    dev_id = "SOLAR-ESP32-CSV"
+    client.post("/api/v1/telemetry", json={
+        "device_id": dev_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "voltage_v": 19.1,
+        "current_a": 2.5,
+        "temperature_c": 33.0,
+        "irradiance_w_m2": 850.0
+    })
+
+    res = client.get(f"/api/v1/telemetry/export/csv?device_id={dev_id}")
+    assert res.status_code == status.HTTP_200_OK
+    assert "text/csv" in res.headers["content-type"]
+    assert "voltage_v" in res.text
+    assert "19.1" in res.text
+
+
+def test_demo_test_packet_and_clear_isolation(client):
+    """Test demo telemetry packet ingestion and safe clear without touching real data."""
+    dev_id = "SOLAR-ESP32-DEMOTEST"
+
+    # 1. Ingest real packet
+    client.post("/api/v1/telemetry", json={
+        "device_id": dev_id,
+        "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+        "voltage_v": 18.0,
+        "current_a": 2.0,
+        "temperature_c": 30.0,
+        "irradiance_w_m2": 800.0
+    })
+
+    # 2. Ingest 2 demo test packets
+    d1 = client.post("/api/v1/telemetry/demo-test", json={
+        "device_id": dev_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "voltage_v": 18.5,
+        "current_a": 2.3,
+        "temperature_c": 31.0,
+        "irradiance_w_m2": 810.0
+    })
+    assert d1.status_code == status.HTTP_201_CREATED
+    assert d1.json()["data"]["data_quality"] == "DEMO"
+
+    client.post("/api/v1/telemetry/demo-test")  # Auto-generated demo packet
+
+    # 3. Check stats shows both real and demo
+    stats_res = client.get(f"/api/v1/devices/{dev_id}/telemetry-stats")
+    assert stats_res.json()["demo_records_count"] >= 1
+    assert stats_res.json()["real_valid_records"] == 1  # Real data count strictly preserved!
+
+    # 4. Clear demo data
+    clear_res = client.delete(f"/api/v1/telemetry/demo?device_id={dev_id}")
+    assert clear_res.status_code == status.HTTP_200_OK
+    assert clear_res.json()["deleted_count"] >= 1
+
+    # 5. Verify real data still exists
+    stats_res2 = client.get(f"/api/v1/devices/{dev_id}/telemetry-stats")
+    assert stats_res2.json()["demo_records_count"] == 0
+    assert stats_res2.json()["real_valid_records"] == 1  # Real hardware packet was untouched!
+

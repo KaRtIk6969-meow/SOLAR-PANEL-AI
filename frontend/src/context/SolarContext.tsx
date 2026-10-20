@@ -8,7 +8,9 @@ import {
   AlertItem, 
   ModelEvaluationData, 
   DailyReportData, 
-  SimulationScenario 
+  SimulationScenario,
+  DataSource,
+  PredictionItem
 } from '@/types/solar';
 import { 
   generateReading, 
@@ -19,13 +21,26 @@ import {
   mockModelEvaluation, 
   mockDailyReports 
 } from '@/lib/mock-data';
+import {
+  getLatestTelemetry,
+  getHistoricalTelemetry,
+  getDeviceStatus,
+  getAlerts,
+  getPredictions,
+  getLatestHealthScore,
+  resolveAlertInBackend,
+  mapBackendTelemetryToDomain,
+  mapBackendAlertToDomain,
+  mapBackendHealthToDomain,
+} from '@/lib/api';
 
 interface SolarContextType {
-  telemetry: TelemetryReading;
+  telemetry: TelemetryReading | null;
   history: TelemetryReading[];
   device: DeviceInfo;
   alerts: AlertItem[];
-  health: PanelHealth;
+  predictions: PredictionItem[];
+  health: PanelHealth | null;
   modelEval: ModelEvaluationData;
   reports: DailyReportData[];
   scenario: SimulationScenario;
@@ -34,138 +49,257 @@ interface SolarContextType {
   setIsSimulated: (val: boolean) => void;
   isLiveStreaming: boolean;
   setIsLiveStreaming: (val: boolean) => void;
-  resolveAlert: (id: string) => void;
-  refreshData: () => void;
+  dataSource: DataSource;
+  setDataSource: (source: DataSource) => void;
+  isLoading: boolean;
+  isError: boolean;
+  errorMessage: string | null;
+  isDeviceOffline: boolean;
+  lastSuccessfulUpdate: Date | null;
   lastUpdated: Date;
+  resolveAlert: (id: string) => Promise<void>;
+  refreshData: () => Promise<void>;
+  deviceId: string;
+  setDeviceId: (id: string) => void;
 }
 
 const SolarContext = createContext<SolarContextType | undefined>(undefined);
 
 export function SolarProvider({ children }: { children: React.ReactNode }) {
+  const [deviceId, setDeviceId] = useState<string>('SOLAR-ESP32-01');
+  const [dataSource, setDataSource] = useState<DataSource>('api'); // Default to live FastAPI backend
   const [scenario, setScenario] = useState<SimulationScenario>('normal');
-  const [isSimulated, setIsSimulated] = useState<boolean>(true);
+  const [isSimulated, setIsSimulated] = useState<boolean>(false);
   const [isLiveStreaming, setIsLiveStreaming] = useState<boolean>(true);
-  const [device, setDevice] = useState<DeviceInfo>(mockDeviceInfo);
-  const [alerts, setAlerts] = useState<AlertItem[]>(mockAlerts);
-  const [modelEval] = useState<ModelEvaluationData>(mockModelEvaluation);
-  const [reports] = useState<DailyReportData[]>(mockDailyReports);
-  const [lastUpdated, setLastUpdated] = useState<Date>(() => new Date('2026-10-20T11:30:00.000Z'));
+  
+  // Loading & error states
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isError, setIsError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDeviceOffline, setIsDeviceOffline] = useState<boolean>(false);
+  const [lastSuccessfulUpdate, setLastSuccessfulUpdate] = useState<Date | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date>(() => new Date('2026-10-20T12:00:00.000Z'));
 
-  // Initialize on client mount
+  // Update to client clock on mount
   useEffect(() => {
     setLastUpdated(new Date());
   }, []);
 
-  // Initialize history based on active scenario
-  const [history, setHistory] = useState<TelemetryReading[]>(() => generate24HourHistory('normal'));
+  // Domain data
+  const [telemetry, setTelemetry] = useState<TelemetryReading | null>(null);
+  const [history, setHistory] = useState<TelemetryReading[]>([]);
+  const [device, setDevice] = useState<DeviceInfo>(() => ({
+    ...mockDeviceInfo,
+    id: 'SOLAR-ESP32-01',
+    status: 'OFFLINE',
+  }));
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [predictions, setPredictions] = useState<PredictionItem[]>([]);
+  const [health, setHealth] = useState<PanelHealth | null>(null);
+  const [modelEval] = useState<ModelEvaluationData>(mockModelEvaluation);
+  const [reports] = useState<DailyReportData[]>(mockDailyReports);
 
-  // Initialize current telemetry
-  const [telemetry, setTelemetry] = useState<TelemetryReading>(() => generateReading('normal'));
-
-  // Calculate panel health dynamically from history
-  const health = useMemo(() => calculatePanelHealth(history), [history]);
-
-  // When scenario changes, immediately re-generate history & current telemetry
-  const handleScenarioChange = useCallback((newScenario: SimulationScenario) => {
-    setScenario(newScenario);
-    const newHist = generate24HourHistory(newScenario);
-    setHistory(newHist);
-    const latest = generateReading(newScenario);
-    setTelemetry(latest);
+  // -------------------------------------------------------------
+  // Primary API Data Fetcher
+  // -------------------------------------------------------------
+  const fetchFromApi = useCallback(async (isInitial = false) => {
+    if (isInitial) setIsLoading(true);
     setLastUpdated(new Date());
 
-    // Auto-generate realistic alerts if a fault scenario is triggered
-    if (newScenario === 'soiling') {
-      const soilingAlert: AlertItem = {
-        id: `soiling-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        severity: 'warning',
-        type: 'soiling_dust',
-        title: 'Dust / Soiling Accumulation Injected',
-        description: 'Output dropped by ~18% relative to AI expected baseline across high-sun hours.',
-        metricName: 'Power Delta',
-        metricValue: -16.8,
-        expectedValue: 88.0,
-        unit: 'W',
-        recommendedAction: 'Clean surface glass with demineralized water or soft wipe.',
-        isResolved: false,
-      };
-      setAlerts(prev => [soilingAlert, ...prev.filter(a => a.id !== soilingAlert.id)]);
-    } else if (newScenario === 'open_circuit') {
-      const openAlert: AlertItem = {
-        id: `open-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        severity: 'critical',
-        type: 'open_circuit',
-        title: 'Open Circuit / Load Disconnected',
-        description: 'Voltage clamped at open circuit (Voc: 21.8V) with near-zero current (0.02A).',
-        metricName: 'Current',
-        metricValue: 0.02,
-        expectedValue: 5.20,
-        unit: 'A',
-        recommendedAction: 'Check terminal screws, load fuses, and shunt resistor continuity.',
-        isResolved: false,
-      };
-      setAlerts(prev => [openAlert, ...prev.filter(a => a.id !== openAlert.id)]);
-    } else if (newScenario === 'shading') {
-      const shadeAlert: AlertItem = {
-        id: `shade-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        severity: 'info',
-        type: 'partial_shading',
-        title: 'Partial Shading Injected',
-        description: 'Sudden optical obstruction registered. Significant current dip across parallel cells.',
-        metricName: 'Irradiance',
-        metricValue: 320,
-        expectedValue: 920,
-        unit: 'W/m²',
-        recommendedAction: 'Inspect array perimeter for shadows from trees or neighboring structures.',
-        isResolved: false,
-      };
-      setAlerts(prev => [shadeAlert, ...prev.filter(a => a.id !== shadeAlert.id)]);
-    }
-  }, []);
+    try {
+      // Execute parallel queries against FastAPI backend
+      const [
+        latestData,
+        historyData,
+        deviceStatusData,
+        alertsData,
+        predsData,
+        healthScoreData,
+      ] = await Promise.all([
+        getLatestTelemetry(deviceId),
+        getHistoricalTelemetry(deviceId, 60),
+        getDeviceStatus(deviceId),
+        getAlerts(deviceId, 20),
+        getPredictions(deviceId, 20),
+        getLatestHealthScore(deviceId),
+      ]);
 
-  // Periodic live telemetry simulation tick (every 3 seconds)
+      const now = new Date();
+
+      // Check if backend or device responded
+      if (!latestData && !deviceStatusData) {
+        // Device or backend unreachable / no records
+        setIsDeviceOffline(true);
+        setIsError(true);
+        setErrorMessage('Cannot establish link to ESP32 / FastAPI backend.');
+        setDevice(prev => ({ ...prev, status: 'OFFLINE' }));
+        // Note: Do NOT fill in fake data when offline.
+        setIsLoading(false);
+        return;
+      }
+
+      setIsError(false);
+      setErrorMessage(null);
+
+      // 1. Process Device Status
+      const isOfflineStatus = deviceStatusData ? deviceStatusData.status === 'OFFLINE' : false;
+      setIsDeviceOffline(isOfflineStatus);
+
+      setDevice(prev => ({
+        ...prev,
+        id: deviceId,
+        name: deviceStatusData?.device_name || prev.name,
+        status: (deviceStatusData?.status as any) || (latestData ? 'ONLINE' : 'OFFLINE'),
+        lastSeen: deviceStatusData?.last_seen_at || latestData?.timestamp || prev.lastSeen,
+      }));
+
+      // 2. Process Telemetry Reading
+      if (latestData) {
+        const domainTelemetry = mapBackendTelemetryToDomain(latestData);
+        setTelemetry(domainTelemetry);
+        setLastSuccessfulUpdate(new Date(latestData.timestamp || now));
+      } else {
+        setTelemetry(null);
+      }
+
+      // 3. Process Historical Series (chronological order for Recharts)
+      if (historyData && historyData.length > 0) {
+        const domainHistory = historyData
+          .map(item => mapBackendTelemetryToDomain(item))
+          .reverse();
+        setHistory(domainHistory);
+      } else {
+        setHistory([]);
+      }
+
+      // 4. Process Alerts
+      if (alertsData) {
+        const domainAlerts = alertsData.map(mapBackendAlertToDomain);
+        setAlerts(domainAlerts);
+      }
+
+      // 5. Process Predictions
+      if (predsData) {
+        setPredictions(predsData.map(p => ({
+          id: String(p.id),
+          timestamp: p.timestamp,
+          target: p.target,
+          predictedValue: p.predicted_value,
+          actualValue: p.actual_value,
+          residual: p.residual,
+          deviationPct: p.deviation_pct,
+          alertStatus: p.alert_status,
+          modelVersion: p.model_version,
+        })));
+      }
+
+      // 6. Process Health Score
+      if (healthScoreData) {
+        setHealth(mapBackendHealthToDomain(healthScoreData));
+      } else if (historyData && historyData.length > 0) {
+        // Fallback: derive health from real historical readings
+        const domainHist = historyData.map(item => mapBackendTelemetryToDomain(item));
+        setHealth(calculatePanelHealth(domainHist));
+      } else {
+        setHealth(null);
+      }
+
+    } catch (err) {
+      console.error('[SolarContext] API Sync Error:', err);
+      setIsDeviceOffline(true);
+      setIsError(true);
+      setErrorMessage('Network error communicating with SolarAI API');
+      setDevice(prev => ({ ...prev, status: 'OFFLINE' }));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [deviceId]);
+
+  // -------------------------------------------------------------
+  // Mock Data Handler (Preserved for Demo / Simulation Mode)
+  // -------------------------------------------------------------
+  const handleScenarioChange = useCallback((newScenario: SimulationScenario) => {
+    setScenario(newScenario);
+    if (dataSource === 'mock') {
+      const newHist = generate24HourHistory(newScenario);
+      setHistory(newHist);
+      const latest = generateReading(newScenario);
+      setTelemetry(latest);
+      setHealth(calculatePanelHealth(newHist));
+      setLastSuccessfulUpdate(new Date());
+      setLastUpdated(new Date());
+    }
+  }, [dataSource]);
+
+  // Initial mount trigger
+  useEffect(() => {
+    if (dataSource === 'api') {
+      fetchFromApi(true);
+    } else {
+      // Mock mode initialization
+      setTelemetry(generateReading('normal'));
+      const mockHist = generate24HourHistory('normal');
+      setHistory(mockHist);
+      setHealth(calculatePanelHealth(mockHist));
+      setAlerts(mockAlerts);
+      setDevice({ ...mockDeviceInfo, status: 'SIMULATED' });
+      setIsDeviceOffline(false);
+      setIsLoading(false);
+      setLastSuccessfulUpdate(new Date());
+    }
+  }, [dataSource, fetchFromApi]);
+
+  // -------------------------------------------------------------
+  // Periodic Polling / Streaming Loop
+  // -------------------------------------------------------------
   useEffect(() => {
     if (!isLiveStreaming) return;
 
-    const interval = setInterval(() => {
-      const newReading = generateReading(scenario);
-      setTelemetry(newReading);
-      setLastUpdated(new Date());
+    if (dataSource === 'api') {
+      // Poll FastAPI backend every 4 seconds for fresh real hardware telemetry
+      const interval = setInterval(() => {
+        fetchFromApi(false);
+      }, 4000);
+      return () => clearInterval(interval);
+    } else {
+      // Mock streaming loop
+      const interval = setInterval(() => {
+        const newReading = generateReading(scenario);
+        setTelemetry(newReading);
+        setLastSuccessfulUpdate(new Date());
+        setLastUpdated(new Date());
+        setHistory(prev => {
+          if (prev.length === 0) return [newReading];
+          return [...prev.slice(1), newReading];
+        });
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [isLiveStreaming, dataSource, scenario, fetchFromApi]);
 
-      // Update history buffer: update the last point or append
-      setHistory(prev => {
-        if (prev.length === 0) return [newReading];
-        const next = [...prev.slice(1), newReading];
-        return next;
-      });
-
-      // Update device heartbeat
-      setDevice(prev => ({
-        ...prev,
-        lastSeen: new Date().toISOString(),
-        status: 'ONLINE',
-      }));
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [isLiveStreaming, scenario]);
-
-  const resolveAlert = useCallback((id: string) => {
+  // Alert resolver
+  const resolveAlert = useCallback(async (id: string) => {
+    if (dataSource === 'api') {
+      await resolveAlertInBackend(id);
+    }
     setAlerts(prev => prev.map(alert => 
       alert.id === id 
         ? { ...alert, isResolved: true, resolvedAt: new Date().toISOString() } 
         : alert
     ));
-  }, []);
+  }, [dataSource]);
 
-  const refreshData = useCallback(() => {
-    const updated = generateReading(scenario);
-    setTelemetry(updated);
-    setLastUpdated(new Date());
-  }, [scenario]);
+  // Manual refresh trigger
+  const refreshData = useCallback(async () => {
+    if (dataSource === 'api') {
+      await fetchFromApi(false);
+    } else {
+      const updated = generateReading(scenario);
+      setTelemetry(updated);
+      setLastSuccessfulUpdate(new Date());
+      setLastUpdated(new Date());
+    }
+  }, [dataSource, scenario, fetchFromApi]);
 
   return (
     <SolarContext.Provider
@@ -174,6 +308,7 @@ export function SolarProvider({ children }: { children: React.ReactNode }) {
         history,
         device,
         alerts,
+        predictions,
         health,
         modelEval,
         reports,
@@ -183,9 +318,18 @@ export function SolarProvider({ children }: { children: React.ReactNode }) {
         setIsSimulated,
         isLiveStreaming,
         setIsLiveStreaming,
+        dataSource,
+        setDataSource,
+        isLoading,
+        isError,
+        errorMessage,
+        isDeviceOffline,
+        lastSuccessfulUpdate,
+        lastUpdated,
         resolveAlert,
         refreshData,
-        lastUpdated,
+        deviceId,
+        setDeviceId,
       }}
     >
       {children}

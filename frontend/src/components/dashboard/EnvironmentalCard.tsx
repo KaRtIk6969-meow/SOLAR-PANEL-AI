@@ -5,16 +5,22 @@ import { TelemetryReading } from '@/types/solar';
 import { Sun, Thermometer, Wind, Compass, CloudSun } from 'lucide-react';
 
 interface EnvironmentalCardProps {
-  telemetry: TelemetryReading;
+  telemetry: TelemetryReading | null;
   className?: string;
 }
 
 export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCardProps) {
+  const hasTelemetry = telemetry !== null && telemetry !== undefined;
+
   // Approximate UV Index from irradiance
-  const uvIndex = Math.min(11, Math.max(0, Math.round((telemetry.irradiance / 100) * 10) / 10));
+  const uvIndex = hasTelemetry && telemetry.irradiance != null
+    ? Math.min(11, Math.max(0, Math.round((telemetry.irradiance / 100) * 10) / 10))
+    : null;
   
   // Cell vs Ambient thermal delta
-  const tempDelta = Math.round((telemetry.temperature - telemetry.ambientTemp) * 10) / 10;
+  const tempDelta = hasTelemetry && telemetry.temperature != null && telemetry.ambientTemp != null
+    ? Math.round((telemetry.temperature - telemetry.ambientTemp) * 10) / 10
+    : null;
 
   return (
     <div className={`p-5 lg:p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 flex flex-col justify-between ${className}`}>
@@ -33,7 +39,7 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
         </div>
 
         <span className="px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20">
-          UV Index: {uvIndex}
+          UV Index: {uvIndex !== null ? uvIndex : '--'}
         </span>
       </div>
 
@@ -47,12 +53,12 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-bold font-mono text-white">
-              {telemetry.temperature.toFixed(1)}
+              {hasTelemetry && telemetry.temperature != null ? telemetry.temperature.toFixed(1) : '--'}
             </span>
             <span className="text-xs text-slate-400">°C</span>
           </div>
           <span className="text-[10px] text-rose-400 font-medium">
-            +{tempDelta}°C above ambient
+            {tempDelta !== null ? `+${tempDelta}°C above ambient` : '--'}
           </span>
         </div>
 
@@ -64,12 +70,12 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-bold font-mono text-white">
-              {telemetry.ambientTemp.toFixed(1)}
+              {hasTelemetry && telemetry.ambientTemp != null ? telemetry.ambientTemp.toFixed(1) : '--'}
             </span>
             <span className="text-xs text-slate-400">°C</span>
           </div>
           <span className="text-[10px] text-slate-400">
-            Convection cooling
+            {hasTelemetry ? 'Convection cooling' : '--'}
           </span>
         </div>
 
@@ -81,12 +87,14 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-bold font-mono text-white">
-              {telemetry.irradiance}
+              {hasTelemetry && telemetry.irradiance != null ? telemetry.irradiance : '--'}
             </span>
             <span className="text-xs text-slate-400">W/m²</span>
           </div>
           <span className="text-[10px] text-amber-400">
-            {telemetry.irradiance > 800 ? 'High Clear Sun' : telemetry.irradiance > 300 ? 'Moderate Flux' : 'Diffuse/Dusk'}
+            {hasTelemetry && telemetry.irradiance != null
+              ? (telemetry.irradiance > 800 ? 'High Clear Sun' : telemetry.irradiance > 300 ? 'Moderate Flux' : 'Diffuse/Dusk')
+              : 'Awaiting sensor'}
           </span>
         </div>
 
@@ -112,7 +120,7 @@ export function EnvironmentalCard({ telemetry, className = '' }: EnvironmentalCa
       <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs">
         <span className="text-slate-400">Atmospheric Clearness Index (Kt)</span>
         <span className="font-mono font-bold text-amber-400">
-          0.74 (Clear Sky)
+          {hasTelemetry ? '0.74 (Clear Sky)' : '--'}
         </span>
       </div>
     </div>

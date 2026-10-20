@@ -5,7 +5,7 @@ import { LucideIcon } from 'lucide-react';
 
 interface MetricCardProps {
   title: string;
-  value: number | string;
+  value: number | string | null | undefined;
   unit: string;
   icon: LucideIcon;
   subValue?: string;
@@ -15,9 +15,10 @@ interface MetricCardProps {
   };
   accentColor: 'amber' | 'emerald' | 'cyan' | 'purple' | 'rose' | 'blue';
   progress?: {
-    current: number;
+    current: number | null | undefined;
     max: number;
   };
+  isLoading?: boolean;
 }
 
 const colorStyles = {
@@ -68,8 +69,13 @@ export function MetricCard({
   change,
   accentColor,
   progress,
+  isLoading = false,
 }: MetricCardProps) {
   const styles = colorStyles[accentColor];
+  const isAvailable = value !== null && value !== undefined && value !== '' && !(typeof value === 'number' && isNaN(value));
+  const displayValue = isAvailable ? value : '--';
+  const hasValidProgress = progress && progress.current !== null && progress.current !== undefined && !isNaN(progress.current) && progress.max > 0;
+  const progressPercent = hasValidProgress ? Math.min(100, Math.max(0, (progress!.current! / progress!.max) * 100)) : 0;
 
   return (
     <div className={`group relative p-5 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 transition-all duration-300 hover:shadow-xl ${styles.bgGlow}`}>
@@ -85,12 +91,18 @@ export function MetricCard({
 
       {/* Main Value Display */}
       <div className="flex items-baseline gap-1.5 mb-2">
-        <span className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-mono">
-          {value}
-        </span>
-        <span className="text-sm font-semibold text-slate-400">
-          {unit}
-        </span>
+        {isLoading ? (
+          <div className="h-8 w-20 bg-slate-800 animate-pulse rounded-lg" />
+        ) : (
+          <>
+            <span className={`text-2xl sm:text-3xl font-extrabold tracking-tight font-mono ${isAvailable ? 'text-white' : 'text-slate-500'}`}>
+              {displayValue}
+            </span>
+            <span className="text-sm font-semibold text-slate-400">
+              {unit}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Sub-value or Change Pill */}
@@ -108,7 +120,7 @@ export function MetricCard({
         <div className="mt-3 w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
           <div 
             className={`h-full rounded-full transition-all duration-500 ${styles.barFill}`}
-            style={{ width: `${Math.min(100, Math.max(0, (progress.current / progress.max) * 100))}%` }}
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
       )}

@@ -78,3 +78,16 @@ def get_status(device_id: str, db: Session = Depends(get_db)):
             detail=f"Device '{device_id}' not found."
         )
     return compute_device_status(device)
+
+
+@router.get(
+    "/{device_id}/telemetry-stats",
+    response_model=DeviceTelemetryStatsResponse,
+    summary="Get Hardware Telemetry & Data Quality Audit",
+    description="Computes real-time telemetry statistics, valid/invalid sample counts, sensor diagnostics, and ML dataset readiness."
+)
+def get_telemetry_stats(device_id: str, db: Session = Depends(get_db)):
+    from app.services.device_service import compute_device_telemetry_stats, get_or_create_device
+    device = get_or_create_device(db, device_id)
+    return compute_device_telemetry_stats(db, device)
+

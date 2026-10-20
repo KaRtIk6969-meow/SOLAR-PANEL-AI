@@ -133,3 +133,22 @@ With the backend server running:
 ```powershell
 powershell -ExecutionPolicy Bypass -File backend/tests/live_endpoint_test.ps1
 ```
+
+---
+
+## 🌐 Phase 4: Frontend-to-Backend Integration
+
+The Next.js frontend connects directly to the FastAPI endpoints with real-time polling and robust connection safeguards:
+
+### Environment Variables
+Configure `frontend/.env.local` or environment variables:
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### Key Integration Features
+- **Live Endpoint Integration**: Pulls live readings (`/telemetry/latest`), history (`/telemetry/history`), device status (`/devices/{id}/status`), alerts (`/alerts`), predictions (`/predictions`), and health scores (`/health-scores/{id}/latest`).
+- **Offline Hardware Guard**: When the backend or ESP32 node is unreachable or stale, displays **"Device Offline"** badges instead of fabricated values.
+- **Null-Safe Display**: Missing telemetry attributes are cleanly rendered as `"--"` and never as false zeros (`0.00`).
+- **Last Successful Telemetry Timestamp**: Prominently displays `Last successful update: <timestamp>` across the top status bar and device cards.
+- **Dual Mode Support**: Users can toggle between **"Live API"** and **"Mock Demo"** mode directly from the dashboard header, keeping mock simulations 100% operational for offline demonstrations.
