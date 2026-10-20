@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import Base, get_db
+import app.models  # noqa: F401 - Register models for test DB
 
 # Use in-memory SQLite database with StaticPool for isolated, thread-safe test execution
 TEST_DATABASE_URL = "sqlite:///:memory:"
