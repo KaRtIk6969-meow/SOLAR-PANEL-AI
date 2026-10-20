@@ -16,12 +16,20 @@ SolarAI is a college IoT & AI platform designed to monitor solar panel electrica
         ▼
 [ Backend Layer ]
   FastAPI Server (Port 8000)
-    ├── /api/v1/telemetry        (Ingestion, Validation, Derivation)
+    ├── /api/v1/telemetry        (Ingestion, Quality Tagging, Anomaly Alerting)
     ├── /api/v1/devices          (Hardware Nodes & Heartbeat Status)
-    ├── /api/v1/telemetry/history
-    └── /api/v1/telemetry/dashboard
+    ├── /api/v1/predictions      (AI Forecasts, Residuals & Drift)
+    ├── /api/v1/alerts           (Hardware & Threshold Alarms)
+    ├── /api/v1/health-scores    (Composite & Degradation Scoring)
+    └── /api/v1/model-metrics    (MAE, RMSE, R2 Benchmark Tracking)
         │
-        ├── SQLite / PostgreSQL Database
+        ├── PostgreSQL Relational Persistence (Alembic Migrations)
+        │     ├── devices
+        │     ├── sensor_readings (V, I, T, G, Power, Eff, Quality, Firmware)
+        │     ├── predictions (Target, Predicted, Actual, Residual, Dev%)
+        │     ├── alerts (Severity, Category, Message, Resolution)
+        │     ├── health_scores (Overall, Electrical, Thermal, PV)
+        │     └── model_metrics (MAE, RMSE, R2, Dataset Size)
         │
 [ Frontend Layer ]
   Next.js 16 + React 19 + Tailwind v4 + Recharts (Port 3000)

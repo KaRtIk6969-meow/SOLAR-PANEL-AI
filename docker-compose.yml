@@ -1,0 +1,35 @@
+services:
+  # PostgreSQL 16 Relational Persistence Layer
+  postgres:
+    image: postgres:16-alpine
+    container_name: solarai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: solarai_db
+      POSTGRES_USER: solarai_user
+      POSTGRES_PASSWORD: solarai_secure_password_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solarai_user -d solarai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional Web-Based Database GUI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: solarai-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@solarai.local
+      PGADMIN_DEFAULT_PASSWORD: admin_secure_password
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:

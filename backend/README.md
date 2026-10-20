@@ -1,288 +1,193 @@
-# SolarAI - FastAPI Backend (Phase 2)
+# SolarAI - FastAPI Backend & PostgreSQL Persistence (Phase 2 & Phase 3)
 
-Clean, production-grade telemetry ingestion and analytics backend for the **SolarAI** solar panel monitoring and AI efficiency prediction platform. Built with **FastAPI**, **Pydantic v2**, and **SQLAlchemy 2.0**.
-
----
-
-## 🚀 Key Features
-
-- **High-Throughput Telemetry Ingestion**: Securely receives sensor packets from ESP32 edge microcontrollers (`POST /api/v1/telemetry`).
-- **Comprehensive Validation**:
-  - Electrical bounds verification ($0 \le V \le 100\text{V}$, $0 \le I \le 50\text{A}$).
-  - Environmental bounds verification ($-40^\circ\text{C} \le T \le 125^\circ\text{C}$, $0 \le G \le 2000\text{ W/m}^2$).
-  - ISO 8601 UTC timestamp sanity checking (auto-assignment when missing, rejection of future timestamps).
-- **Derived Metrics Calculation**:
-  - Instantaneous electrical power: $P = V \times I$ (Watts).
-  - Photovoltaic system efficiency: $\eta = \frac{P}{G \times A} \times 100\%$ where $G$ is irradiance and $A$ is active panel area ($0.65\text{ m}^2$ default).
-- **Duplicate Record Prevention**: Database-level unique constraint (`uq_device_timestamp`) returning standard `409 Conflict`.
-- **Instant Anomaly Flagging**: Heuristic rule-based detection for Open-Circuit ($V > 12\text{V}, I \approx 0\text{A}$), Short-Circuit ($I > 0\text{A}, V \approx 0\text{V}$), Overheating ($T > 65^\circ\text{C}$), and Low Efficiency ($\eta < 3\%$).
-- **Aggregated Analytics & Status**:
-  - Latest reading retrieval (`GET /api/v1/telemetry/latest/{device_id}`).
-  - Historical time-series query with pagination (`GET /api/v1/telemetry/history/{device_id}`).
-  - Live dashboard telemetry and accumulated energy yield in Watt-hours (`GET /api/v1/telemetry/dashboard/{device_id}`).
-  - Hardware device heartbeat and connection triage (`ONLINE`, `STALE`, `OFFLINE`).
-- **Interactive Documentation**: Auto-generated Swagger UI (`/docs`) and ReDoc (`/redoc`).
-- **CORS Configured**: Ready out-of-the-box for Next.js frontend running on `http://localhost:3000` or `3001`.
+Clean, production-grade telemetry ingestion, PostgreSQL persistence, and analytics backend for the **SolarAI** solar panel monitoring and AI efficiency prediction platform. Built with **FastAPI**, **Pydantic v2**, **SQLAlchemy 2.0**, and **Alembic**.
 
 ---
 
-## 🛠️ Tech Stack & Requirements
+## 🏗️ Relational Database Schema (PostgreSQL)
 
-- **Python**: 3.10+ (tested on Python 3.12.10)
-- **Framework**: FastAPI 0.115+
-- **ASGI Server**: Uvicorn
-- **Validation**: Pydantic v2
-- **ORM**: SQLAlchemy 2.0 (SQLite default, PostgreSQL ready)
-- **Testing**: Pytest & HTTPX
+Phase 3 introduces a robust relational schema tailored for high-frequency IoT time-series telemetry, hardware failure alerts, health scoring, and AI model benchmarking:
+
+### 1. `devices`
+Tracks solar photovoltaic nodes and microcontrollers (ESP32).
+- `id` (VARCHAR(64), Primary Key): e.g. `SOLAR-ESP32-01`
+- `name` (VARCHAR(128))
+- `location` (VARCHAR(256), Nullable)
+- `rated_power_w` (FLOAT, default: 100.0)
+- `panel_area_m2` (FLOAT, default: 0.65)
+- `temp_coeff` (FLOAT, default: -0.0038)
+- `firmware_version` (VARCHAR(32), default: '1.0.0')
+- `status` (VARCHAR(32), default: 'ONLINE') — `ONLINE`, `STALE`, `OFFLINE`
+- `is_active` (BOOLEAN, default: True)
+- `ip_address` (VARCHAR(45), Nullable)
+- `last_seen_at` (TIMESTAMP WITH TIME ZONE, Nullable)
+- `created_at` & `updated_at` (TIMESTAMP WITH TIME ZONE)
+
+### 2. `sensor_readings` (Real Hardware Telemetry)
+Persists physical sensor packets received directly from the ESP32.
+- `id` (INTEGER, Autoincrement, Primary Key)
+- `device_id` (VARCHAR(64), Foreign Key $\to$ `devices.id`, Indexed)
+- `timestamp` (TIMESTAMP WITH TIME ZONE, Indexed)
+- `voltage_v` (FLOAT): Array terminal voltage ($0.0 \le V \le 60.0$)
+- `current_a` (FLOAT): Load current ($0.0 \le I \le 30.0$)
+- `temperature_c` (FLOAT): Panel cell temperature ($-40.0 \le T \le 125.0$)
+- `irradiance_w_m2` (FLOAT): Solar flux ($0.0 \le G \le 2000.0$)
+- `power_w` (FLOAT): Instantaneous electrical power ($V \times I$)
+- `efficiency_pct` (FLOAT, Nullable): Solar conversion efficiency
+- `data_quality` (VARCHAR(32)): `GOOD`, `SUSPECT_OPEN_CIRCUIT`, `SUSPECT_SHORT_CIRCUIT`, `OVERHEATING`, `LOW_EFFICIENCY`
+- `firmware_version` (VARCHAR(32), default: '1.0.0')
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+- **Constraints & Indexes**:
+  - `UNIQUE(device_id, timestamp)`: Deduplication guard
+  - `INDEX(device_id, timestamp)`: Composite time-series query acceleration
+
+### 3. `predictions` (AI Inference & Anomaly Triage)
+Stores forecasted power/efficiency against actual telemetry to evaluate model accuracy and detect performance drift.
+- `id` (INTEGER, Autoincrement, Primary Key)
+- `device_id` (VARCHAR(64), Foreign Key $\to$ `devices.id`, Indexed)
+- `timestamp` (TIMESTAMP WITH TIME ZONE, Indexed)
+- `target` (VARCHAR(64), default: 'power_w')
+- `predicted_value` (FLOAT): AI model predicted power (Watts)
+- `actual_value` (FLOAT, Nullable): Real power recorded by sensor
+- `residual` (FLOAT, Nullable): $P_{\text{actual}} - P_{\text{predicted}}$
+- `deviation_pct` (FLOAT, Nullable): $\frac{P_{\text{actual}} - P_{\text{pred}}}{P_{\text{pred}}} \times 100\%$
+- `alert_status` (VARCHAR(32), default: 'NORMAL'): `NORMAL`, `WARNING`, `CRITICAL`
+- `model_version` (VARCHAR(64), default: 'rf_v1.0.0')
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+- **Indexes**: `INDEX(device_id, timestamp)`
+
+### 4. `alerts` (Diagnostic & Alarm Events)
+Persistent record of hardware failure modes, thermal overshoots, and anomalous generation drops.
+- `id` (INTEGER, Autoincrement, Primary Key)
+- `device_id` (VARCHAR(64), Foreign Key $\to$ `devices.id`, Indexed)
+- `timestamp` (TIMESTAMP WITH TIME ZONE, Indexed)
+- `severity` (VARCHAR(32)): `INFO`, `WARNING`, `CRITICAL`
+- `category` (VARCHAR(64)): `ELECTRICAL`, `THERMAL`, `EFFICIENCY`, `ANOMALY`, `CONNECTIVITY`
+- `message` (TEXT)
+- `is_resolved` (BOOLEAN, default: False)
+- `resolved_at` (TIMESTAMP WITH TIME ZONE, Nullable)
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+- **Indexes**: `INDEX(device_id, timestamp)`, `INDEX(is_resolved, severity)`
+
+### 5. `health_scores` (Automated Panel Degradation & Health)
+Multidimensional condition evaluations computed from long-term sensor trends.
+- `id` (INTEGER, Autoincrement, Primary Key)
+- `device_id` (VARCHAR(64), Foreign Key $\to$ `devices.id`, Indexed)
+- `timestamp` (TIMESTAMP WITH TIME ZONE, Indexed)
+- `overall_score` (FLOAT, 0-100)
+- `electrical_health` (FLOAT, 0-100)
+- `thermal_health` (FLOAT, 0-100)
+- `photovoltaic_health` (FLOAT, 0-100)
+- `degradation_factor` (FLOAT, default: 0.0)
+- `recommendation` (TEXT, Nullable)
+- `created_at` (TIMESTAMP WITH TIME ZONE)
+- **Indexes**: `INDEX(device_id, timestamp)`
+
+### 6. `model_metrics` (ML Training Benchmarks)
+Historical tracking of machine learning model evaluations across datasets.
+- `id` (INTEGER, Autoincrement, Primary Key)
+- `model_name` (VARCHAR(128)): e.g. `SolarEfficiencyRandomForest`
+- `model_version` (VARCHAR(64)): e.g. `rf_v1.0.0`
+- `evaluation_date` (TIMESTAMP WITH TIME ZONE, Indexed)
+- `mae` (FLOAT): Mean Absolute Error (Watts)
+- `rmse` (FLOAT): Root Mean Squared Error (Watts)
+- `r2_score` (FLOAT): Coefficient of Determination ($R^2$)
+- `dataset_size` (INTEGER): Number of test samples
+- `notes` (TEXT, Nullable)
+- `created_at` (TIMESTAMP WITH TIME ZONE)
 
 ---
 
-## ⚙️ Environment Configuration
+## 🔒 Separation of Real Hardware Data & Mock Data
 
-Configuration is managed via environment variables (or a `.env` file in the `backend/` directory) using `pydantic-settings`. No database credentials or secrets are hardcoded.
-
-```ini
-# Database Connection (SQLite default, or PostgreSQL)
-DATABASE_URL=sqlite:///./solarai.db
-# DATABASE_URL=postgresql://postgres:password@localhost:5432/solarai_db
-
-# Security
-API_SECRET_KEY=solarai_super_secret_dev_key_change_in_production
-REQUIRE_DEVICE_TOKEN=false
-
-# CORS (Next.js frontend allowed origins)
-CORS_ORIGINS=["http://localhost:3000","http://localhost:3001","http://127.0.0.1:3000","http://127.0.0.1:3001"]
-
-# Solar Panel Physical Constants
-DEFAULT_PANEL_AREA_M2=0.65
-DEFAULT_RATED_POWER_W=100.0
-
-# Device Heartbeat Triage
-DEVICE_ONLINE_THRESHOLD_SEC=60
-DEVICE_STALE_THRESHOLD_SEC=180
-```
+- **Real Telemetry**: Only verified sensor packets received at `POST /api/v1/telemetry` are persisted into `sensor_readings`.
+- **Quality Tracking**: Sensor readings are tagged with `data_quality` (`GOOD`, `SUSPECT_OPEN_CIRCUIT`, etc.) to track physical signal fidelity.
+- **Mock Isolation**: The frontend dashboard mock-data system remains strictly isolated in `frontend/src/mock/`. Mock samples are **never** injected into the PostgreSQL telemetry tables.
 
 ---
 
-## 🏃 Quick Start
+## 🗄️ Database Migrations with Alembic
 
-### 1. Setup Virtual Environment & Dependencies
+Alembic manages all schema revisions. The initial migration is located at `backend/alembic/versions/001_initial_phase3_schema.py`.
+
 ```powershell
 cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+
+# Run all migrations up to latest
+alembic upgrade head
+
+# Rollback one migration
+alembic downgrade -1
 ```
 
-### 2. Run Database Migrations / Initialize Tables
-Database tables are automatically created on application startup via SQLAlchemy metadata.
+---
 
-### 3. Start the FastAPI Server
+## 🐳 Spin up PostgreSQL with Docker
+
+Run PostgreSQL 16 and pgAdmin with Docker Compose:
+
 ```powershell
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+# Start PostgreSQL & pgAdmin in the background
+docker compose up -d
+
+# Stop database services
+docker compose down
 ```
-The server will be accessible at:
-- **API Base URL**: `http://127.0.0.1:8000`
-- **Swagger Interactive Docs**: `http://127.0.0.1:8000/docs`
-- **ReDoc Documentation**: `http://127.0.0.1:8000/redoc`
-- **OpenAPI JSON Spec**: `http://127.0.0.1:8000/openapi.json`
+
+- **PostgreSQL**: `localhost:5432` (`solarai_db` / `solarai_user` / `solarai_secure_password_2026`)
+- **pgAdmin Web GUI**: [http://localhost:5050](http://localhost:5050) (`admin@solarai.local` / `admin_secure_password`)
 
 ---
 
-## 📡 Complete API Reference
+## 📡 API Endpoints Reference
 
-### 1. Ingest Telemetry
-- **Method**: `POST`
-- **Endpoint**: `/api/v1/telemetry`
-- **Summary**: Receives and processes sensor telemetry from ESP32.
-- **Request Body**:
-```json
-{
-  "device_id": "SOLAR-ESP32-01",
-  "timestamp": "2026-10-20T07:44:00Z",
-  "voltage_v": 18.42,
-  "current_a": 2.31,
-  "temperature_c": 31.7,
-  "irradiance_w_m2": 812.0
-}
-```
-- **Response (201 Created)**:
-```json
-{
-  "status": "success",
-  "message": "Telemetry packet processed and persisted successfully.",
-  "data": {
-    "id": 1,
-    "device_id": "SOLAR-ESP32-01",
-    "timestamp": "2026-10-20T07:44:00",
-    "voltage_v": 18.42,
-    "current_a": 2.31,
-    "temperature_c": 31.7,
-    "irradiance_w_m2": 812.0,
-    "power_w": 42.55,
-    "efficiency_pct": 8.06,
-    "is_anomaly": false,
-    "anomaly_notes": null,
-    "created_at": "2026-10-20T07:44:00.123456"
-  }
-}
-```
-- **Error Responses**:
-  - `409 Conflict`: Duplicate timestamp for device.
-  - `422 Unprocessable Content`: Value out of physical range or invalid future timestamp.
-
----
-
-### 2. Get Latest Reading
-- **Method**: `GET`
-- **Endpoint**: `/api/v1/telemetry/latest/{device_id}`
-- **Response (200 OK)**:
-```json
-{
-  "id": 1,
-  "device_id": "SOLAR-ESP32-01",
-  "timestamp": "2026-10-20T07:44:00",
-  "voltage_v": 18.42,
-  "current_a": 2.31,
-  "temperature_c": 31.7,
-  "irradiance_w_m2": 812.0,
-  "power_w": 42.55,
-  "efficiency_pct": 8.06,
-  "is_anomaly": false,
-  "anomaly_notes": null,
-  "created_at": "2026-10-20T07:44:00"
-}
-```
-
----
-
-### 3. Get Historical Telemetry
-- **Method**: `GET`
-- **Endpoint**: `/api/v1/telemetry/history/{device_id}?limit=100&start_time=...&end_time=...`
-- **Response (200 OK)**: Array of `TelemetryResponse` sorted chronologically descending.
-
----
-
-### 4. Consolidated Dashboard Telemetry & Energy Yield
-- **Method**: `GET`
-- **Endpoint**: `/api/v1/telemetry/dashboard/{device_id}`
-- **Response (200 OK)**:
-```json
-{
-  "device_id": "SOLAR-ESP32-01",
-  "device_name": "ESP32 Solar Node SOLAR-ESP32-01",
-  "status": "ONLINE",
-  "last_seen_at": "2026-10-20T07:44:00",
-  "rated_power_w": 100.0,
-  "panel_area_m2": 0.65,
-  "current_reading": { ... },
-  "today_energy_wh": 0.35,
-  "today_peak_power_w": 42.55,
-  "avg_efficiency_pct": 8.06,
-  "total_samples_today": 3
-}
-```
-
----
-
-### 5. Device Connection Status
-- **Method**: `GET`
-- **Endpoint**: `/api/v1/devices/{device_id}/status`
-- **Response (200 OK)**:
-```json
-{
-  "device_id": "SOLAR-ESP32-01",
-  "status": "ONLINE",
-  "is_active": true,
-  "last_seen_at": "2026-10-20T07:44:00",
-  "seconds_since_last_seen": 0.9,
-  "firmware_version": "1.0.0",
-  "ip_address": null
-}
-```
-
----
-
-### 6. System Healthcheck
-- **Method**: `GET`
-- **Endpoint**: `/health`
-- **Response (200 OK)**:
-```json
-{
-  "status": "healthy",
-  "database": "connected",
-  "version": "1.0.0"
-}
-```
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/v1/telemetry` | Ingests ESP32 sensor packet $\to$ `sensor_readings` |
+| `GET` | `/api/v1/telemetry/latest/{device_id}` | Latest sensor reading |
+| `GET` | `/api/v1/telemetry/history/{device_id}` | Time-series query with pagination |
+| `GET` | `/api/v1/telemetry/dashboard/{device_id}`| Daily accumulated yield (Wh), peak power, avg efficiency |
+| `GET` | `/api/v1/devices/{device_id}/status` | Heartbeat & connectivity triage (`ONLINE`, `STALE`, `OFFLINE`) |
+| `GET` | `/api/v1/alerts/{device_id}` | System, electrical, and thermal alarms |
+| `POST` | `/api/v1/alerts` | Log new alert |
+| `PATCH`| `/api/v1/alerts/{alert_id}/resolve` | Resolve an active alarm |
+| `GET` | `/api/v1/predictions/{device_id}` | Query AI predictions, residuals, and deviations |
+| `POST` | `/api/v1/predictions` | Record AI inference output |
+| `GET` | `/api/v1/health-scores/{device_id}` | Historical health evaluations |
+| `GET` | `/api/v1/health-scores/{device_id}/latest`| Most recent panel health assessment |
+| `POST` | `/api/v1/health-scores` | Record health score |
+| `GET` | `/api/v1/model-metrics` | Historical AI model evaluation benchmarks ($R^2$, MAE, RMSE) |
+| `POST` | `/api/v1/model-metrics` | Record new AI model evaluation run |
+| `GET` | `/health` | Healthcheck and database connection status |
+| `GET` | `/docs` | Interactive Swagger UI API documentation |
 
 ---
 
 ## 🧪 Automated Testing
 
-### Running the Pytest Suite
+Run the full pytest suite (16 tests covering all models, constraints, and endpoints):
+
 ```powershell
 pytest backend/tests -v
 ```
+
 Output:
 ```text
-backend/tests/test_telemetry_api.py::test_root_and_healthcheck PASSED           [ 10%]
-backend/tests/test_telemetry_api.py::test_ingest_valid_telemetry_and_calculations PASSED [ 20%]
-backend/tests/test_telemetry_api.py::test_duplicate_telemetry_handling PASSED   [ 30%]
-backend/tests/test_telemetry_api.py::test_invalid_sensor_ranges PASSED          [ 40%]
-backend/tests/test_telemetry_api.py::test_future_timestamp_validation PASSED   [ 50%]
-backend/tests/test_telemetry_api.py::test_missing_timestamp_auto_assignment PASSED [ 60%]
-backend/tests/test_telemetry_api.py::test_get_latest_and_history PASSED         [ 70%]
-backend/tests/test_telemetry_api.py::test_dashboard_summary_endpoint PASSED    [ 80%]
-backend/tests/test_telemetry_api.py::test_device_status_and_registration PASSED [ 90%]
+backend/tests/test_phase3_persistence.py::test_sensor_reading_fields_and_persistence PASSED [  6%]
+backend/tests/test_phase3_persistence.py::test_automatic_alert_generation_on_anomaly PASSED [ 12%]
+backend/tests/test_phase3_persistence.py::test_predictions_table_crud PASSED [ 18%]
+backend/tests/test_phase3_persistence.py::test_health_scores_table_crud PASSED [ 25%]
+backend/tests/test_phase3_persistence.py::test_model_metrics_table_crud PASSED [ 31%]
+backend/tests/test_phase3_persistence.py::test_mock_data_isolation PASSED    [ 37%]
+backend/tests/test_telemetry_api.py::test_root_and_healthcheck PASSED       [ 43%]
+backend/tests/test_telemetry_api.py::test_ingest_valid_telemetry_and_calculations PASSED [ 50%]
+backend/tests/test_telemetry_api.py::test_duplicate_telemetry_handling PASSED [ 56%]
+backend/tests/test_telemetry_api.py::test_invalid_sensor_ranges PASSED      [ 62%]
+backend/tests/test_telemetry_api.py::test_future_timestamp_validation PASSED [ 68%]
+backend/tests/test_telemetry_api.py::test_missing_timestamp_auto_assignment PASSED [ 75%]
+backend/tests/test_telemetry_api.py::test_get_latest_and_history PASSED     [ 81%]
+backend/tests/test_telemetry_api.py::test_dashboard_summary_endpoint PASSED [ 87%]
+backend/tests/test_telemetry_api.py::test_device_status_and_registration PASSED [ 93%]
 backend/tests/test_telemetry_api.py::test_anomaly_detection_open_circuit PASSED [100%]
-======================= 10 passed in 0.36s =======================
-```
-
-### Running the Live Endpoint PowerShell Test Suite
-```powershell
-powershell -ExecutionPolicy Bypass -File backend/tests/live_endpoint_test.ps1
-```
-
----
-
-## 📟 Hardware ESP32 Firmware Snippet (Arduino / C++)
-
-For the hardware teammates building the ESP32 node, transmit readings over Wi-Fi using the standard HTTPClient library:
-
-```cpp
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
-
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
-const char* serverUrl = "http://<BACKEND_HOST_IP>:8000/api/v1/telemetry";
-
-void sendTelemetry(float voltage, float current, float temp, float irradiance) {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(serverUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    StaticJsonDocument<256> doc;
-    doc["device_id"] = "SOLAR-ESP32-01";
-    // timestamp is optional; backend will auto-assign high-precision UTC if omitted
-    doc["voltage_v"] = voltage;
-    doc["current_a"] = current;
-    doc["temperature_c"] = temp;
-    doc["irradiance_w_m2"] = irradiance;
-
-    String requestBody;
-    serializeJson(doc, requestBody);
-
-    int httpResponseCode = http.POST(requestBody);
-    if (httpResponseCode > 0) {
-      String response = http.getString();
-      Serial.printf("HTTP %d: %s\n", httpResponseCode, response.c_str());
-    } else {
-      Serial.printf("Error on sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
-    }
-    http.end();
-  }
-}
+======================= 16 passed in 0.79s =======================
 ```

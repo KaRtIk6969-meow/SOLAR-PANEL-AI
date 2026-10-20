@@ -48,6 +48,11 @@ class TelemetryCreate(BaseModel):
         description="Solar flux / irradiance in Watts per square meter (W/m²) [Range: 0.0 to 2000.0]",
         examples=[812.0]
     )
+    firmware_version: Optional[str] = Field(
+        default="1.0.0",
+        description="ESP32 firmware build version",
+        examples=["1.0.0"]
+    )
 
     @field_validator("voltage_v", "current_a", "temperature_c", "irradiance_w_m2")
     @classmethod
@@ -94,7 +99,8 @@ class TelemetryCreate(BaseModel):
                 "voltage_v": 18.42,
                 "current_a": 2.31,
                 "temperature_c": 31.7,
-                "irradiance_w_m2": 812.0
+                "irradiance_w_m2": 812.0,
+                "firmware_version": "1.0.0"
             }
         }
     )
@@ -110,7 +116,9 @@ class TelemetryResponse(BaseModel):
     irradiance_w_m2: float
     power_w: float
     efficiency_pct: Optional[float] = None
-    is_anomaly: bool
+    data_quality: str = "GOOD"
+    firmware_version: Optional[str] = "1.0.0"
+    is_anomaly: bool = False
     anomaly_notes: Optional[str] = None
     created_at: datetime
 

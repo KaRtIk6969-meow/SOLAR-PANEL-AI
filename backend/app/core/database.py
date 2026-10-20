@@ -3,19 +3,25 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.core.config import settings
 
-# Engine configuration
-connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
+# Normalize Postgres connection string if needed (e.g. postgres:// -> postgresql://)
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args=connect_args,
-    pool_pre_ping=True,
-)
+# Engine configuration depending on backend driver
+engine_kwargs = {"pool_pre_ping": True}
 
-# Enable foreign keys for SQLite
-if settings.DATABASE_URL.startswith("sqlite"):
+if db_url.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    # PostgreSQL connection pooling optimizations
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
+engine = create_engine(db_url, **engine_kwargs)
+
+# Enable foreign keys for SQLite when testing or using SQLite fallback
+if db_url.startswith("sqlite"):
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
