@@ -10,7 +10,7 @@ import {
   AlertItem 
 } from '@/types/solar';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface BackendTelemetryResponse {
   id: number;
@@ -62,6 +62,31 @@ export interface BackendDeviceTelemetryStatsResponse {
   };
   packet_interval_sec: number | null;
   api_response_status: string;
+}
+
+export interface BackendNetworkInfoResponse {
+  primary_ip: string;
+  port: number;
+  available_ips: string[];
+  telemetry_url: string;
+  status: string;
+}
+
+export interface BackendTrainResponse {
+  status: string;
+  message: string;
+  report: {
+    dataset_size: number;
+    train_samples: number;
+    test_samples: number;
+    best_model_name: string;
+    best_model_version: string;
+    models: Record<string, {
+      mae: number;
+      rmse: number;
+      r2_score: number;
+    }>;
+  };
 }
 
 
@@ -325,6 +350,38 @@ export async function resolveAlertInBackend(alertId: number | string): Promise<b
     return res.ok;
   } catch {
     return false;
+  }
+/**
+ * Fetch server local network IP addresses and telemetry target URL for ESP32
+ */
+export async function getNetworkInfo(): Promise<BackendNetworkInfoResponse | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/devices/network-info`, {}, 4000);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn('[SolarAI API] getNetworkInfo error:', err);
+    return null;
+  }
+}
+
+/**
+ * Manually trigger AI model training across valid real hardware telemetry records
+ */
+export async function trainModels(deviceId?: string): Promise<{ success: boolean; data?: BackendTrainResponse; error?: string }> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/ml/train`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: deviceId || null }),
+    }, 15000);
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.detail || 'Training failed' };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error triggering model training' };
   }
 }
 

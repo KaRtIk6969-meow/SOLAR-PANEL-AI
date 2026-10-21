@@ -22,7 +22,15 @@ import {
   Zap,
   Gauge,
   HelpCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Brain,
+  Sparkles,
+  Network,
+  FileCode,
+  ArrowUpRight,
+  Sliders,
+  Info,
+  CheckCircle
 } from 'lucide-react';
 import { 
   getDeviceTelemetryStats, 
@@ -30,8 +38,12 @@ import {
   injectDemoTestTelemetry, 
   clearDemoTelemetry, 
   getExportCsvUrl,
+  getNetworkInfo,
+  trainModels,
   BackendDeviceTelemetryStatsResponse,
-  BackendTelemetryResponse
+  BackendTelemetryResponse,
+  BackendNetworkInfoResponse,
+  BackendTrainResponse
 } from '@/lib/api';
 
 export default function DevicePage() {
@@ -39,25 +51,32 @@ export default function DevicePage() {
   const [mounted, setMounted] = useState(false);
   const [stats, setStats] = useState<BackendDeviceTelemetryStatsResponse | null>(null);
   const [recentReadings, setRecentReadings] = useState<BackendTelemetryResponse[]>([]);
+  const [networkInfo, setNetworkInfo] = useState<BackendNetworkInfoResponse | null>(null);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedIp, setCopiedIp] = useState(false);
   const [isInjecting, setIsInjecting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainResult, setTrainResult] = useState<BackendTrainResponse | null>(null);
+  const [trainError, setTrainError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const deviceId = 'SOLAR-ESP32-01';
 
   const [sampleTimestamp, setSampleTimestamp] = useState('2026-10-20T12:00:00.000Z');
 
-  // Fetch device stats and recent raw packets from backend
+  // Fetch device stats, network info, and recent raw packets from backend
   const fetchDeviceData = useCallback(async () => {
     try {
-      const [statsData, historyData] = await Promise.all([
+      const [statsData, historyData, netData] = await Promise.all([
         getDeviceTelemetryStats(deviceId),
         getHistoricalTelemetry(deviceId, 10),
+        getNetworkInfo(),
       ]);
       if (statsData) setStats(statsData);
       if (historyData) setRecentReadings(historyData);
+      if (netData) setNetworkInfo(netData);
     } catch (err) {
       console.warn('[DevicePage] Error polling device telemetry stats:', err);
     }
@@ -103,6 +122,27 @@ export default function DevicePage() {
     } finally {
       setIsClearing(false);
       setTimeout(() => setActionMessage(null), 5000);
+    }
+  };
+
+  // Handle Manual AI Model Training (Triggered manually only, never automatic)
+  const handleManualTrain = async () => {
+    setIsTraining(true);
+    setTrainResult(null);
+    setTrainError(null);
+    try {
+      const res = await trainModels(deviceId);
+      if (res.success && res.data) {
+        setTrainResult(res.data);
+        setActionMessage(`AI Model trained successfully! Best algorithm: ${res.data.report.best_model_name} (${res.data.report.best_model_version}).`);
+        await fetchDeviceData();
+      } else {
+        setTrainError(res.error || 'Failed to train AI model.');
+      }
+    } catch (err: any) {
+      setTrainError(err.message || 'Error executing AI model training pipeline.');
+    } finally {
+      setIsTraining(false);
     }
   };
 
@@ -471,15 +511,95 @@ void sendTelemetry(float voltage, float current, float temp, float lux) {
           </div>
         </div>
 
-        {/* Recommendation Box */}
-        <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-xs">
+        {/* Recommendation & Training Policy Notice */}
+        <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <span className="text-slate-300">
             <strong>Recommendation:</strong> {stats?.recommendation || (totalValid === 0 ? 'No telemetry received yet. Stream sensor packets from ESP32.' : 'More data recommended for reliable model evaluation.')}
           </span>
-          <span className="text-[11px] font-mono text-cyan-400 shrink-0 ml-3">
+          <span className="text-[11px] font-mono text-cyan-400 shrink-0">
             {totalValid} / {minThreshold} ({progressPct}%)
           </span>
         </div>
+
+        {/* Manual Model Training Action (Strictly Manual - Never Automatic) */}
+        <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-xs text-slate-400">
+            <span className="font-semibold text-slate-300">Manual Training Gate:</span>{' '}
+            {isTrainingReady 
+              ? 'Minimum sample threshold met. You may now manually trigger the AI training pipeline.'
+              : `Collect ${minThreshold - totalValid} more real hardware packet(s) to unlock model training.`}
+          </div>
+
+          <button
+            onClick={handleManualTrain}
+            disabled={!isTrainingReady || isTraining}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg ${
+              isTrainingReady && !isTraining
+                ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 cursor-pointer shadow-cyan-500/20'
+                : 'bg-slate-800 text-slate-500 border border-slate-700/60 cursor-not-allowed opacity-70'
+            }`}
+          >
+            {isTraining ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                <span>Training AI Models...</span>
+              </>
+            ) : (
+              <>
+                <Brain className="w-4 h-4 text-slate-950" />
+                <span>{isTrainingReady ? 'Train AI Model (Manual Action)' : `Training Locked (${totalValid}/${minThreshold})`}</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Training Result Report Banner */}
+        {trainResult && (
+          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                Model Pipeline Trained & Deployed Successfully
+              </span>
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[11px] font-bold">
+                {trainResult.report.best_model_name} ({trainResult.report.best_model_version})
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+              <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                <span className="text-slate-400 block text-[10px]">Dataset Samples</span>
+                <span className="text-white font-bold">{trainResult.report.dataset_size} total ({trainResult.report.train_samples} train / {trainResult.report.test_samples} test)</span>
+              </div>
+              {trainResult.report.models[trainResult.report.best_model_name] && (
+                <>
+                  <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[10px]">Test MAE</span>
+                    <span className="text-cyan-300 font-bold">{trainResult.report.models[trainResult.report.best_model_name].mae.toFixed(3)} W</span>
+                  </div>
+                  <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[10px]">Test RMSE</span>
+                    <span className="text-cyan-300 font-bold">{trainResult.report.models[trainResult.report.best_model_name].rmse.toFixed(3)} W</span>
+                  </div>
+                  <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[10px]">Test R² Score</span>
+                    <span className="text-emerald-300 font-bold">{trainResult.report.models[trainResult.report.best_model_name].r2_score.toFixed(4)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Training Error Notification */}
+        {trainError && (
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{trainError}</span>
+            </span>
+            <button onClick={() => setTrainError(null)} className="text-rose-400 hover:text-white font-bold ml-2">×</button>
+          </div>
+        )}
       </div>
 
       {/* 5. Data Quality Audit Section */}
@@ -640,7 +760,144 @@ void sendTelemetry(float voltage, float current, float temp, float lux) {
         </div>
       </div>
 
-      {/* 8. Hardware Teammate Specs Section */}
+      {/* 8. Hardware Network Configuration & Local Wi-Fi Guide */}
+      <div className="p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <Network className="w-5 h-5 text-cyan-400" />
+            <h3 className="text-base font-bold text-white tracking-tight">ESP32 Local Network Connection Guide</h3>
+          </div>
+          <span className="px-2.5 py-1 rounded-md text-[11px] font-mono font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">
+            Port 8000 (0.0.0.0 Listener)
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          To stream real hardware telemetry from a physical ESP32, both the ESP32 and this laptop must be on the same local Wi-Fi network (or mobile hotspot). 
+          Flash the firmware below with your laptop&apos;s detected IP address as the destination server.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">Target ESP32 Ingestion URL</span>
+              <button
+                onClick={() => {
+                  const url = networkInfo?.telemetry_url || `http://127.0.0.1:8000/api/v1/telemetry`;
+                  navigator.clipboard.writeText(url);
+                  setCopiedIp(true);
+                  setTimeout(() => setCopiedIp(false), 2000);
+                }}
+                className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium"
+              >
+                {copiedIp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedIp ? 'Copied' : 'Copy URL'}</span>
+              </button>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 font-mono text-xs text-cyan-300 break-all">
+              {networkInfo?.telemetry_url || 'http://<LAPTOP_LAN_IP>:8000/api/v1/telemetry'}
+            </div>
+            <span className="text-[11px] text-slate-500 block">
+              Detected Primary IPv4: <strong className="text-slate-300 font-mono">{networkInfo?.primary_ip || '127.0.0.1'}</strong>
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 space-y-2">
+            <span className="font-semibold text-slate-300 text-xs block">Production Firmware Sketch</span>
+            <p className="text-[11px] text-slate-400">
+              Complete, compilable Arduino IDE / PlatformIO sketch with modular sensor drivers and non-blocking JSON transmission.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <a
+                href="/firmware/esp32_solar_telemetry.ino"
+                download="esp32_solar_telemetry.ino"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download .ino Sketch</span>
+              </a>
+              <button
+                onClick={() => copyToClipboard(sampleArduinoCode, 'code')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+              >
+                {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>Copy Sketch Code</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 9. Configurable Hardware Pinout Placeholders (Subject to Hardware Team Confirmation) */}
+      <div className="p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <Sliders className="w-5 h-5 text-amber-400" />
+            <h3 className="text-base font-bold text-white tracking-tight">ESP32 Sensor Pin Configuration (Placeholders)</h3>
+          </div>
+          <span className="px-2.5 py-1 rounded-md text-[11px] font-sans font-bold bg-amber-500/10 border border-amber-500/30 text-amber-300">
+            Hardware Team Configurable
+          </span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300/90 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            <strong>Note for Hardware Team:</strong> Pin numbers and calibration constants below are default configuration placeholders in <code className="font-mono text-amber-200">esp32_solar_telemetry.ino</code>. Confirm exact physical sensors, ADC attenuation, and wiring before flashing.
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400 font-medium font-sans">
+                <th className="py-2.5 px-3">Physical Measurement</th>
+                <th className="py-2.5 px-3">Sensor Model (Spec)</th>
+                <th className="py-2.5 px-3">Placeholder Constant</th>
+                <th className="py-2.5 px-3">Default Pin</th>
+                <th className="py-2.5 px-3">Bus / Channel</th>
+                <th className="py-2.5 px-3">Calibration Formula</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-semibold text-cyan-300">Array Voltage</td>
+                <td className="py-2.5 px-3 font-sans text-slate-400">Resistor Divider</td>
+                <td className="py-2.5 px-3 text-cyan-400">PIN_VOLTAGE_ADC</td>
+                <td className="py-2.5 px-3 font-bold text-white">GPIO 34</td>
+                <td className="py-2.5 px-3 text-slate-400">ADC1_CH6</td>
+                <td className="py-2.5 px-3 text-xs text-slate-400 font-sans">V_adc × DividerRatio (5.0)</td>
+              </tr>
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-semibold text-emerald-300">Array Current</td>
+                <td className="py-2.5 px-3 font-sans text-slate-400">ACS712 Hall Sensor</td>
+                <td className="py-2.5 px-3 text-emerald-400">PIN_CURRENT_ADC</td>
+                <td className="py-2.5 px-3 font-bold text-white">GPIO 35</td>
+                <td className="py-2.5 px-3 text-slate-400">ADC1_CH7</td>
+                <td className="py-2.5 px-3 text-xs text-slate-400 font-sans">(V_adc - 2.5V) / 0.185 V/A</td>
+              </tr>
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-semibold text-rose-300">Cell Temperature</td>
+                <td className="py-2.5 px-3 font-sans text-slate-400">DS18B20 / NTC Probe</td>
+                <td className="py-2.5 px-3 text-rose-400">PIN_TEMPERATURE</td>
+                <td className="py-2.5 px-3 font-bold text-white">GPIO 4</td>
+                <td className="py-2.5 px-3 text-slate-400">OneWire / Digital</td>
+                <td className="py-2.5 px-3 text-xs text-slate-400 font-sans">OneWire Scratchpad / LM35 10mV/°C</td>
+              </tr>
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-semibold text-yellow-300">Solar Irradiance</td>
+                <td className="py-2.5 px-3 font-sans text-slate-400">Pyranometer / LDR</td>
+                <td className="py-2.5 px-3 text-yellow-400">PIN_IRRADIANCE_ADC</td>
+                <td className="py-2.5 px-3 font-bold text-white">GPIO 36</td>
+                <td className="py-2.5 px-3 text-slate-400">ADC1_CH0 (VP)</td>
+                <td className="py-2.5 px-3 text-xs text-slate-400 font-sans">(ADC / 4095) × 1200 W/m²</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 10. Hardware Teammate Specs Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sample JSON Ingestion Payload */}
         <div className="p-5 lg:p-6 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800/80 space-y-3">
