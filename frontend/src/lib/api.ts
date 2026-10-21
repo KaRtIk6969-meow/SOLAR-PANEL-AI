@@ -351,6 +351,8 @@ export async function resolveAlertInBackend(alertId: number | string): Promise<b
   } catch {
     return false;
   }
+}
+
 /**
  * Fetch server local network IP addresses and telemetry target URL for ESP32
  */
