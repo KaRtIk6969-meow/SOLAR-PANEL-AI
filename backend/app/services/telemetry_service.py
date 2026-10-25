@@ -9,6 +9,7 @@ from app.models.prediction import Prediction
 from app.schemas.telemetry import TelemetryCreate, DashboardDataResponse, TelemetryResponse
 from app.services.device_service import get_or_create_device, compute_device_status
 from app.services.health_service import compute_and_record_health_score
+from app.services.alert_service import evaluate_and_record_alerts
 from ml.predict import predict_power, NoModelAvailableError
 
 
@@ -118,29 +119,18 @@ def record_telemetry(db: Session, telemetry_in: TelemetryCreate) -> SensorReadin
     )
     db.add(reading)
 
-    # 6. If anomaly detected, log diagnostic alert for real hardware monitoring
-    if is_anomaly:
-        severity = "CRITICAL" if quality_tag == "OVERHEATING" else "WARNING"
-        category = "THERMAL" if quality_tag == "OVERHEATING" else "ELECTRICAL"
-        alert = Alert(
-            device_id=telemetry_in.device_id,
-            timestamp=telemetry_in.timestamp,
-            severity=severity,
-            category=category,
-            message=anomaly_notes or f"Sensor anomaly: {quality_tag}",
-            is_resolved=False,
-            created_at=datetime.now(timezone.utc),
-        )
-        db.add(alert)
-
-    # 7. Update device heartbeat and state
+    # 6. Update device heartbeat and state
     device.last_seen_at = telemetry_in.timestamp
     device.firmware_version = fw_ver
     device.status = "ONLINE"
     db.commit()
     db.refresh(reading)
 
-    # 8. Live AI Inference, Prediction Persistence & Physical Health Scoring
+    # 7. Live AI Inference, Prediction Persistence & Physical Health Scoring
+    pred_w = None
+    residual = None
+    model_ver = None
+
     if quality_tag != "DEMO":
         try:
             pred_out = predict_power({
@@ -182,6 +172,13 @@ def record_telemetry(db: Session, telemetry_in: TelemetryCreate) -> SensorReadin
         except Exception:
             # Telemetry ingestion must not fail if ML inference encounters an issue
             pass
+
+    # 8. Intelligent Diagnostic Alerts & Anomaly Evaluation with Deduplication (Step 9)
+    try:
+        evaluate_and_record_alerts(db, reading, residual=residual, predicted_w=pred_w, model_version=model_ver)
+        db.commit()
+    except Exception:
+        pass
 
     return reading
 

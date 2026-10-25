@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     DEFAULT_PANEL_AREA_M2: float = 0.65
     DEFAULT_RATED_POWER_W: float = 100.0
 
+    # Step 9: Intelligent Diagnostic Alert Thresholds
+    ALERT_PERF_WARN_DEVIATION_PCT: float = 10.0  # Generation deficit 10% to < 20%
+    ALERT_PERF_CRIT_DEVIATION_PCT: float = 20.0  # Generation deficit >= 20%
+    ALERT_TEMP_WARN_C: float = 60.0              # Cell temperature 60°C to 75°C
+    ALERT_TEMP_CRIT_C: float = 75.0              # Cell temperature > 75°C
+    ALERT_SOILING_MIN_IRRADIANCE_W_M2: float = 300.0  # High sunlight condition for soiling check
+    ALERT_SOILING_DEFICIT_PCT: float = 12.0      # Yield deficit threshold for soiling
+    ALERT_SOILING_MIN_SAMPLES: int = 3           # Consecutive underperforming readings
+    ALERT_MIN_EVAL_IRRADIANCE_W_M2: float = 50.0 # Min solar flux for performance evaluations
+    ALERT_MIN_EVAL_PREDICTED_W: float = 1.0      # Min predicted power to evaluate residual %
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

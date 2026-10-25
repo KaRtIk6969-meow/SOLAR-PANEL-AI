@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { AlertItem } from '@/types/solar';
+import { useSolar } from '@/context/SolarContext';
 import { AlertTriangle, AlertCircle, Info, CheckCircle2, ArrowRight } from 'lucide-react';
 
 interface RecentAlertsCardProps {
@@ -12,7 +13,11 @@ interface RecentAlertsCardProps {
 }
 
 export function RecentAlertsCard({ alerts, onResolve, className = '' }: RecentAlertsCardProps) {
+  const { modelEval } = useSolar();
   const activeAlerts = alerts.filter(a => !a.isResolved).slice(0, 3);
+  const criticalCount = alerts.filter(a => !a.isResolved && a.severity === 'critical').length;
+  const warningCount = alerts.filter(a => !a.isResolved && a.severity === 'warning').length;
+  const activeCount = alerts.filter(a => !a.isResolved).length;
 
   const getSeverityBadge = (severity: AlertItem['severity']) => {
     switch (severity) {
@@ -54,13 +59,25 @@ export function RecentAlertsCard({ alerts, onResolve, className = '' }: RecentAl
           </p>
         </div>
 
-        <Link
-          href="/alerts"
-          className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
-        >
-          <span>View All</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
+        <div className="flex items-center gap-2">
+          {criticalCount > 0 && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 border border-rose-500/30 text-rose-300">
+              {criticalCount} Critical
+            </span>
+          )}
+          {warningCount > 0 && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+              {warningCount} Warning
+            </span>
+          )}
+          <Link
+            href="/alerts"
+            className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors ml-1"
+          >
+            <span>View All ({activeCount})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
       {/* Alerts List */}
@@ -68,9 +85,9 @@ export function RecentAlertsCard({ alerts, onResolve, className = '' }: RecentAl
         {activeAlerts.length === 0 ? (
           <div className="py-8 flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-            <p className="text-sm font-medium text-slate-300">All Systems Nominal</p>
+            <p className="text-sm font-medium text-slate-300">System operating normally.</p>
             <p className="text-xs text-slate-500 max-w-xs">
-              No active electrical or environmental anomalies detected on this panel array.
+              No active electrical, thermal, or AI performance anomalies detected on this panel array.
             </p>
           </div>
         ) : (

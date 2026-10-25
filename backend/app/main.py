@@ -7,10 +7,33 @@ import app.models  # Register all models on Base.metadata
 from app.api.v1.router import api_v1_router
 
 
+def ensure_schema_compatibility():
+    with engine.connect() as conn:
+        try:
+            res = conn.exec_driver_sql("PRAGMA table_info(alerts)").fetchall()
+            if res:
+                existing_cols = {r[1] for r in res}
+                new_cols = [
+                    ("alert_type", "VARCHAR(64)"),
+                    ("metric_name", "VARCHAR(64)"),
+                    ("metric_value", "FLOAT"),
+                    ("expected_value", "FLOAT"),
+                    ("unit", "VARCHAR(32)"),
+                    ("recommended_action", "TEXT"),
+                ]
+                for col_name, col_type in new_cols:
+                    if col_name not in existing_cols:
+                        conn.exec_driver_sql(f"ALTER TABLE alerts ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database tables on startup
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility()
     yield
     # Cleanup on shutdown if needed
 

@@ -131,6 +131,22 @@ export interface BackendAlertResponse {
   is_resolved: boolean;
   resolved_at: string | null;
   created_at: string;
+  alert_type?: string | null;
+  metric_name?: string | null;
+  metric_value?: number | null;
+  expected_value?: number | null;
+  unit?: string | null;
+  recommended_action?: string | null;
+}
+
+export interface BackendAlertSummaryResponse {
+  device_id?: string | null;
+  total_active: number;
+  critical_count: number;
+  warning_count: number;
+  info_count: number;
+  resolved_count: number;
+  status_text: string;
 }
 
 export interface BackendPredictionResponse {
@@ -342,6 +358,21 @@ export async function getAlerts(deviceId: string, limit = 20): Promise<BackendAl
 }
 
 /**
+ * Fetch aggregated alert counts (critical, warning, active, resolved)
+ */
+export async function getAlertsSummary(deviceId?: string): Promise<BackendAlertSummaryResponse | null> {
+  try {
+    const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : '';
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/alerts/summary${query}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn(`[SolarAI API] getAlertsSummary error:`, err);
+    return null;
+  }
+}
+
+/**
  * Fetch AI predictions
  */
 export async function getPredictions(deviceId: string, limit = 20): Promise<BackendPredictionResponse[]> {
@@ -491,23 +522,49 @@ export function mapBackendAlertToDomain(item: BackendAlertResponse): AlertItem {
   if (sevLower.includes('crit')) severity = 'critical';
   else if (sevLower.includes('info')) severity = 'info';
 
-  let type: AlertItem['type'] = 'sensor_fault';
+  const alertType = (item.alert_type || '').toUpperCase();
   const catLower = item.category.toLowerCase();
-  if (catLower.includes('therm')) type = 'thermal_overheating';
-  else if (catLower.includes('elect')) type = 'open_circuit';
+
+  let type: AlertItem['type'] = 'sensor_fault';
+  if (catLower.includes('therm') || alertType.includes('TEMP')) {
+    type = 'thermal_overheating';
+  } else if (alertType === 'OPEN_CIRCUIT' || catLower.includes('elect')) {
+    type = 'open_circuit';
+  } else if (alertType === 'SHORT_CIRCUIT') {
+    type = 'short_circuit';
+  } else if (alertType.includes('SOIL') || catLower.includes('effic')) {
+    type = 'soiling_dust';
+  } else if (alertType.includes('SHAD')) {
+    type = 'partial_shading';
+  } else if (alertType.includes('OFFLINE')) {
+    type = 'hardware_offline';
+  }
+
+  // Dynamic human-readable diagnostic title
+  let title = `${item.category}: ${item.severity}`;
+  if (alertType === 'PERF_DEFICIT_CRIT') title = 'Severe Generation Deficit';
+  else if (alertType === 'PERF_DEFICIT_WARN') title = 'Generation Below AI Baseline';
+  else if (alertType === 'TEMP_CRIT') title = 'Critical Thermal Overheating';
+  else if (alertType === 'TEMP_WARN') title = 'Elevated Cell Temperature';
+  else if (alertType === 'OPEN_CIRCUIT') title = 'Open Circuit Disconnect';
+  else if (alertType === 'SHORT_CIRCUIT') title = 'Suspect Array Short Circuit';
+  else if (alertType === 'SOILING_SHADING') title = 'Possible Shading or Soiling';
+  else if (alertType === 'SENSOR_FAULT') title = 'Sensor Out of Range';
+  else if (alertType === 'DEVICE_OFFLINE') title = 'ESP32 Hardware Offline';
+  else if (alertType === 'DEVICE_RECOVERED') title = 'ESP32 Hardware Reconnected';
 
   return {
     id: String(item.id),
     timestamp: item.timestamp,
     severity: severity,
     type: type,
-    title: `${item.category}: ${item.severity}`,
+    title: title,
     description: item.message,
-    metricName: item.category,
-    metricValue: 0,
-    expectedValue: 0,
-    unit: '',
-    recommendedAction: 'Inspect physical panel and wiring connections.',
+    metricName: item.metric_name || item.category,
+    metricValue: item.metric_value != null ? Number(item.metric_value.toFixed(1)) : 0,
+    expectedValue: item.expected_value != null ? Number(item.expected_value.toFixed(1)) : 0,
+    unit: item.unit || '',
+    recommendedAction: item.recommended_action || 'Inspect physical panel and wiring connections.',
     isResolved: item.is_resolved,
     resolvedAt: item.resolved_at || undefined,
   };
