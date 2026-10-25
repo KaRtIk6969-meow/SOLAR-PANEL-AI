@@ -53,6 +53,11 @@ class TelemetryCreate(BaseModel):
         description="ESP32 firmware build version",
         examples=["1.0.0"]
     )
+    data_quality: Optional[str] = Field(
+        default=None,
+        description="Optional data quality tag (e.g. DEMO for simulation isolation)",
+        examples=["GOOD"]
+    )
 
     @field_validator("voltage_v", "current_a", "temperature_c", "irradiance_w_m2")
     @classmethod

@@ -101,6 +101,11 @@ def record_telemetry(db: Session, telemetry_in: TelemetryCreate) -> SensorReadin
     if quality_tag == "GOOD" and efficiency_pct is not None and efficiency_pct < 3.0:
         quality_tag = "LOW_EFFICIENCY"
 
+    # Strict isolation: Preserve explicit DEMO tag for AI simulation isolation
+    in_quality = getattr(telemetry_in, "data_quality", None)
+    if in_quality == "DEMO" or telemetry_in.device_id.startswith("DEMO"):
+        quality_tag = "DEMO"
+
     fw_ver = getattr(telemetry_in, "firmware_version", "1.0.0") or "1.0.0"
 
     # 5. Persist record into sensor_readings
@@ -174,11 +179,12 @@ def record_telemetry(db: Session, telemetry_in: TelemetryCreate) -> SensorReadin
             pass
 
     # 8. Intelligent Diagnostic Alerts & Anomaly Evaluation with Deduplication (Step 9)
-    try:
-        evaluate_and_record_alerts(db, reading, residual=residual, predicted_w=pred_w, model_version=model_ver)
-        db.commit()
-    except Exception:
-        pass
+    if quality_tag != "DEMO":
+        try:
+            evaluate_and_record_alerts(db, reading, residual=residual, predicted_w=pred_w, model_version=model_ver)
+            db.commit()
+        except Exception:
+            pass
 
     return reading
 

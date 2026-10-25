@@ -121,7 +121,7 @@ export function SolarProvider({ children }: { children: React.ReactNode }) {
         getLatestTelemetry(deviceId),
         getHistoricalTelemetry(deviceId, 60),
         getDeviceStatus(deviceId),
-        getAlerts(deviceId, 20),
+        getAlerts(deviceId, 50),
         getPredictions(deviceId, 20),
         getLatestHealthScore(deviceId),
         getModelStatus(),

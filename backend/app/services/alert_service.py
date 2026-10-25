@@ -220,60 +220,70 @@ def evaluate_and_record_alerts(
         alerts_touched.append(recovery_alert)
 
     # -------------------------------------------------------------
-    # 1. Intelligent Performance Alarms via ML Residual (Phase 2)
+    # 1. Electrical Diagnostics (Phase 4)
     # -------------------------------------------------------------
-    if irradiance >= settings.ALERT_MIN_EVAL_IRRADIANCE_W_M2 and predicted_w is not None and predicted_w >= settings.ALERT_MIN_EVAL_PREDICTED_W:
-        deficit_w = predicted_w - power
-        deficit_pct = round((deficit_w / predicted_w) * 100.0, 1) if predicted_w > 0 else 0.0
+    # 1a. Open Circuit: voltage present but negligible current under bright sun
+    is_open_circuit = irradiance > 100.0 and voltage > 12.0 and current < 0.05
+    if is_open_circuit:
+        alert, _ = record_or_update_alert(
+            db=db,
+            device_id=device_id,
+            timestamp=now,
+            alert_type="OPEN_CIRCUIT",
+            category="ELECTRICAL",
+            severity="WARNING",
+            message=f"Voltage present ({voltage:.2f}V) but load current unexpectedly near zero ({current:.2f}A) under active sunlight ({irradiance:.0f} W/m²).",
+            metric_name="Array Current",
+            metric_value=current,
+            expected_value=1.5,
+            unit="A",
+            recommended_action="Inspect wiring, connectors, and load/inverter connections for open circuit.",
+        )
+        alerts_touched.append(alert)
+    else:
+        auto_resolve_alert_type(db, device_id, "OPEN_CIRCUIT", resolved_time=now)
 
-        if deficit_pct >= settings.ALERT_PERF_CRIT_DEVIATION_PCT:
-            # Critical performance deficit (>= 20%)
-            auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_WARN", resolved_time=now)
-            alert, _ = record_or_update_alert(
-                db=db,
-                device_id=device_id,
-                timestamp=now,
-                alert_type="PERF_DEFICIT_CRIT",
-                category="PERFORMANCE",
-                severity="CRITICAL",
-                message=(
-                    f"Generation is significantly below AI expected output. "
-                    f"Measured {power:.2f}W vs AI expected {predicted_w:.2f}W "
-                    f"(deficit: {deficit_pct:.1f}%, residual: {residual:+.2f}W, model: {model_version or 'active'})."
-                ),
-                metric_name="Power Output",
-                metric_value=power,
-                expected_value=predicted_w,
-                unit="W",
-                recommended_action="Inspect panel surface, array connections, and inverter/charge controller tracking.",
-            )
-            alerts_touched.append(alert)
-        elif deficit_pct >= settings.ALERT_PERF_WARN_DEVIATION_PCT:
-            # Moderate performance deficit (10% to < 20%)
-            auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_CRIT", resolved_time=now)
-            alert, _ = record_or_update_alert(
-                db=db,
-                device_id=device_id,
-                timestamp=now,
-                alert_type="PERF_DEFICIT_WARN",
-                category="PERFORMANCE",
-                severity="WARNING",
-                message=(
-                    f"Generation is below AI expected output. "
-                    f"Measured {power:.2f}W vs AI expected {predicted_w:.2f}W "
-                    f"(deficit: {deficit_pct:.1f}%, residual: {residual:+.2f}W)."
-                ),
-                metric_name="Power Output",
-                metric_value=power,
-                expected_value=predicted_w,
-                unit="W",
-                recommended_action="Inspect panel surface and surrounding area for dust or shading.",
-            )
-            alerts_touched.append(alert)
-        elif deficit_pct < 8.0:
-            # Power within nominal baseline (< 8% deficit with 2% hysteresis) -> resolve performance alerts
-            auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_CRIT", resolved_time=now)
-            auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_WARN", resolved_time=now)
+    # 1b. Short Circuit: current flowing with near-zero voltage under bright sun
+    is_short_circuit = irradiance > 200.0 and voltage < 1.0 and current > 1.0
+    if is_short_circuit:
+        alert, _ = record_or_update_alert(
+            db=db,
+            device_id=device_id,
+            timestamp=now,
+            alert_type="SHORT_CIRCUIT",
+            category="ELECTRICAL",
+            severity="CRITICAL",
+            message=f"Current flowing ({current:.2f}A) with abnormally low array voltage ({voltage:.2f}V) under sunlight ({irradiance:.0f} W/m²).",
+            metric_name="Array Voltage",
+            metric_value=voltage,
+            expected_value=18.4,
+            unit="V",
+            recommended_action="Inspect wiring, junction box, and bypass diodes for electrical short.",
+        )
+        alerts_touched.append(alert)
+    else:
+        auto_resolve_alert_type(db, device_id, "SHORT_CIRCUIT", resolved_time=now)
+
+    # 1c. Power Inconsistency: power deviates from V * I
+    expected_power = round(voltage * current, 2)
+    if abs(power - expected_power) > 1.0:
+        alert, _ = record_or_update_alert(
+            db=db,
+            device_id=device_id,
+            timestamp=now,
+            alert_type="ELECTRICAL_MISMATCH",
+            category="ELECTRICAL",
+            severity="WARNING",
+            message=f"Measured power ({power:.2f}W) is inconsistent with calculated V × I ({expected_power:.2f}W).",
+            metric_name="Electric Power",
+            metric_value=power,
+            expected_value=expected_power,
+            unit="W",
+            recommended_action="Inspect sensor calibration and analog-to-digital converter accuracy.",
+        )
+        alerts_touched.append(alert)
+    else:
+        auto_resolve_alert_type(db, device_id, "ELECTRICAL_MISMATCH", resolved_time=now)
 
     # -------------------------------------------------------------
     # 2. Thermal Diagnostics (Phase 3)
@@ -320,68 +330,66 @@ def evaluate_and_record_alerts(
         auto_resolve_alert_type(db, device_id, "TEMP_WARN", resolved_time=now)
 
     # -------------------------------------------------------------
-    # 3. Electrical Diagnostics (Phase 4)
+    # 3. Intelligent Performance Alarms via ML Residual (Phase 2)
     # -------------------------------------------------------------
-    # 3a. Open Circuit: voltage present but negligible current under bright sun
-    if irradiance > 100.0 and voltage > 12.0 and current < 0.05:
-        alert, _ = record_or_update_alert(
-            db=db,
-            device_id=device_id,
-            timestamp=now,
-            alert_type="OPEN_CIRCUIT",
-            category="ELECTRICAL",
-            severity="WARNING",
-            message=f"Voltage present ({voltage:.2f}V) but load current unexpectedly near zero ({current:.2f}A) under active sunlight ({irradiance:.0f} W/m²).",
-            metric_name="Array Current",
-            metric_value=current,
-            expected_value=1.5,
-            unit="A",
-            recommended_action="Inspect wiring, connectors, and load/inverter connections for open circuit.",
-        )
-        alerts_touched.append(alert)
-    else:
-        auto_resolve_alert_type(db, device_id, "OPEN_CIRCUIT", resolved_time=now)
+    # Only evaluate generic generation deviation when electrical circuit is connected
+    if not (is_open_circuit or is_short_circuit):
+        if irradiance >= settings.ALERT_MIN_EVAL_IRRADIANCE_W_M2 and predicted_w is not None and predicted_w >= settings.ALERT_MIN_EVAL_PREDICTED_W:
+            deficit_w = predicted_w - power
+            deficit_pct = round((deficit_w / predicted_w) * 100.0, 1) if predicted_w > 0 else 0.0
 
-    # 3b. Short Circuit: current flowing with near-zero voltage under bright sun
-    if irradiance > 200.0 and voltage < 1.0 and current > 1.0:
-        alert, _ = record_or_update_alert(
-            db=db,
-            device_id=device_id,
-            timestamp=now,
-            alert_type="SHORT_CIRCUIT",
-            category="ELECTRICAL",
-            severity="CRITICAL",
-            message=f"Current flowing ({current:.2f}A) with abnormally low array voltage ({voltage:.2f}V) under sunlight ({irradiance:.0f} W/m²).",
-            metric_name="Array Voltage",
-            metric_value=voltage,
-            expected_value=18.4,
-            unit="V",
-            recommended_action="Inspect wiring, junction box, and bypass diodes for electrical short.",
-        )
-        alerts_touched.append(alert)
+            if deficit_pct >= settings.ALERT_PERF_CRIT_DEVIATION_PCT:
+                # Critical performance deficit (>= 20%)
+                auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_WARN", resolved_time=now)
+                alert, _ = record_or_update_alert(
+                    db=db,
+                    device_id=device_id,
+                    timestamp=now,
+                    alert_type="PERF_DEFICIT_CRIT",
+                    category="PERFORMANCE",
+                    severity="CRITICAL",
+                    message=(
+                        f"Generation is significantly below AI expected output. "
+                        f"Measured {power:.2f}W vs AI expected {predicted_w:.2f}W "
+                        f"(deficit: {deficit_pct:.1f}%, residual: {residual:+.2f}W, model: {model_version or 'active'})."
+                    ),
+                    metric_name="Power Output",
+                    metric_value=power,
+                    expected_value=predicted_w,
+                    unit="W",
+                    recommended_action="Inspect panel surface, array connections, and inverter/charge controller tracking.",
+                )
+                alerts_touched.append(alert)
+            elif deficit_pct >= settings.ALERT_PERF_WARN_DEVIATION_PCT:
+                # Moderate performance deficit (10% to < 20%)
+                auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_CRIT", resolved_time=now)
+                alert, _ = record_or_update_alert(
+                    db=db,
+                    device_id=device_id,
+                    timestamp=now,
+                    alert_type="PERF_DEFICIT_WARN",
+                    category="PERFORMANCE",
+                    severity="WARNING",
+                    message=(
+                        f"Generation is below AI expected output. "
+                        f"Measured {power:.2f}W vs AI expected {predicted_w:.2f}W "
+                        f"(deficit: {deficit_pct:.1f}%, residual: {residual:+.2f}W)."
+                    ),
+                    metric_name="Power Output",
+                    metric_value=power,
+                    expected_value=predicted_w,
+                    unit="W",
+                    recommended_action="Inspect panel surface and surrounding area for dust or shading.",
+                )
+                alerts_touched.append(alert)
+            elif deficit_pct < 8.0:
+                # Power within nominal baseline (< 8% deficit with 2% hysteresis) -> resolve performance alerts
+                auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_CRIT", resolved_time=now)
+                auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_WARN", resolved_time=now)
     else:
-        auto_resolve_alert_type(db, device_id, "SHORT_CIRCUIT", resolved_time=now)
-
-    # 3c. Power Inconsistency: power deviates from V * I
-    expected_power = round(voltage * current, 2)
-    if abs(power - expected_power) > 1.0:
-        alert, _ = record_or_update_alert(
-            db=db,
-            device_id=device_id,
-            timestamp=now,
-            alert_type="ELECTRICAL_MISMATCH",
-            category="ELECTRICAL",
-            severity="WARNING",
-            message=f"Measured power ({power:.2f}W) is inconsistent with calculated V × I ({expected_power:.2f}W).",
-            metric_name="Electric Power",
-            metric_value=power,
-            expected_value=expected_power,
-            unit="W",
-            recommended_action="Inspect sensor calibration and analog-to-digital converter accuracy.",
-        )
-        alerts_touched.append(alert)
-    else:
-        auto_resolve_alert_type(db, device_id, "ELECTRICAL_MISMATCH", resolved_time=now)
+        # If open/short circuit fault is active, auto-resolve generic performance deficit alerts
+        auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_CRIT", resolved_time=now)
+        auto_resolve_alert_type(db, device_id, "PERF_DEFICIT_WARN", resolved_time=now)
 
     # -------------------------------------------------------------
     # 4. Sensor Diagnostics & Physical Bound Validation (Phase 5)

@@ -83,8 +83,6 @@ def get_alerts_for_device(
     is_resolved: Optional[bool] = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    # Refresh offline check if device has gone quiet
-    evaluate_device_offline_alerts(db, device_id=device_id)
     query = db.query(Alert).filter(Alert.device_id == device_id)
     if is_resolved is not None:
         query = query.filter(Alert.is_resolved == is_resolved)

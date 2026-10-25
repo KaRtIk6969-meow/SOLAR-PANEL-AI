@@ -137,7 +137,9 @@ export function RecentAlertsCard({ alerts, onResolve, className = '' }: RecentAl
       {/* Footer tip */}
       <div className="pt-4 mt-2 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
         <span>Hardware team diagnostic recommendations</span>
-        <span className="text-slate-400 font-mono">XGBoost v1.4</span>
+        <span className="text-slate-400 font-mono">
+          {modelEval?.modelName ? `${modelEval.modelName} (${modelEval.version})` : 'AI Diagnostics'}
+        </span>
       </div>
     </div>
   );
