@@ -50,6 +50,46 @@ def register_device(device_in: DeviceCreate, db: Session = Depends(get_db)):
 
 
 @router.get(
+    "/network-info",
+    summary="Get Server Local Network Configuration",
+    description="Returns the server's local network IP addresses and recommended ingestion URL for ESP32 firmware configuration."
+)
+def get_network_info():
+    import socket
+    local_ips = []
+    primary_ip = "127.0.0.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        primary_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if not ip.startswith("127.") and ip not in local_ips:
+                local_ips.append(ip)
+    except Exception:
+        pass
+
+    if primary_ip not in local_ips and not primary_ip.startswith("127."):
+        local_ips.insert(0, primary_ip)
+
+    port = 8000
+    telemetry_url = f"http://{primary_ip}:{port}/api/v1/telemetry"
+    return {
+        "primary_ip": primary_ip,
+        "port": port,
+        "available_ips": local_ips,
+        "telemetry_url": telemetry_url,
+        "status": "operational"
+    }
+
+
+@router.get(
     "/{device_id}",
     response_model=DeviceResponse,
     summary="Get Device Information",

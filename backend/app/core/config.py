@@ -1,6 +1,11 @@
+from pathlib import Path
 from typing import List, Union
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Workspace root path for unified database resolution
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+CANONICAL_DB_FILE = PROJECT_ROOT / "solarai.db"
 
 
 class Settings(BaseSettings):
@@ -13,8 +18,21 @@ class Settings(BaseSettings):
         "computes power & efficiency, and powers real-time dashboard analytics."
     )
 
-    # Environment & Database Configuration
-    DATABASE_URL: str = "sqlite:///./solarai.db"
+    # Environment & Database Configuration (Resolved to canonical path across root and backend dirs)
+    DATABASE_URL: str = f"sqlite:///{CANONICAL_DB_FILE.as_posix()}"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if not v:
+            return f"sqlite:///{CANONICAL_DB_FILE.as_posix()}"
+        if v.startswith("sqlite:///") and not v.startswith("sqlite:///:memory:"):
+            path_part = v.replace("sqlite:///", "", 1)
+            p = Path(path_part)
+            if not p.is_absolute():
+                resolved = (PROJECT_ROOT / p).resolve()
+                return f"sqlite:///{resolved.as_posix()}"
+        return v
     
     # Security & Tokens
     API_SECRET_KEY: str = "solarai_super_secret_dev_key_change_in_production"
@@ -27,6 +45,8 @@ class Settings(BaseSettings):
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ]
 
     # Sensor Operational Boundaries (Physical bounds for PV testing)

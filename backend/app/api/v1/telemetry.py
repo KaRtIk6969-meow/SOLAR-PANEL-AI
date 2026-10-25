@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, verify_device_token
 from app.schemas.telemetry import (
@@ -170,7 +170,8 @@ def export_telemetry_csv(
     description="Injects a simulated sensor telemetry packet tagged explicitly with data_quality='DEMO'. Isolated from real hardware data and strictly excluded from ML model training."
 )
 def ingest_demo_telemetry(
-    payload: Optional[TelemetryCreate] = None,
+    device_id: Optional[str] = Query(default=None, description="Target device ID"),
+    payload: Optional[Dict[str, Any]] = Body(default=None),
     db: Session = Depends(get_db)
 ):
     from datetime import datetime, timezone
@@ -179,18 +180,11 @@ def ingest_demo_telemetry(
     import random
 
     now = datetime.now(timezone.utc)
-    if payload:
-        dev_id = payload.device_id
-        v = payload.voltage_v
-        curr = payload.current_a
-        temp = payload.temperature_c
-        irr = payload.irradiance_w_m2
-    else:
-        dev_id = "SOLAR-ESP32-01"
-        v = round(18.2 + random.uniform(0.1, 1.2), 2)
-        curr = round(2.2 + random.uniform(0.1, 0.5), 2)
-        temp = round(31.0 + random.uniform(0.5, 3.0), 1)
-        irr = round(800.0 + random.uniform(10.0, 80.0), 1)
+    dev_id = (payload and payload.get("device_id")) or device_id or "SOLAR-ESP32-01"
+    v = float(payload.get("voltage_v")) if (payload and payload.get("voltage_v") is not None) else round(18.2 + random.uniform(0.1, 1.2), 2)
+    curr = float(payload.get("current_a")) if (payload and payload.get("current_a") is not None) else round(2.2 + random.uniform(0.1, 0.5), 2)
+    temp = float(payload.get("temperature_c")) if (payload and payload.get("temperature_c") is not None) else round(31.0 + random.uniform(0.5, 3.0), 1)
+    irr = float(payload.get("irradiance_w_m2")) if (payload and payload.get("irradiance_w_m2") is not None) else round(800.0 + random.uniform(10.0, 80.0), 1)
 
     pwr = round(v * curr, 2)
     eff = round((pwr / (0.65 * irr)) * 100.0, 2) if irr > 20 else None

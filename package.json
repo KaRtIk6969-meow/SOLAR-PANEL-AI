@@ -8,7 +8,7 @@
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix frontend run start",
     "lint": "npm --prefix frontend run lint",
-    "backend:dev": "uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload",
+    "backend:dev": "uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload",
     "backend:test": "pytest backend/tests -v",
     "backend:migrate": "alembic -c backend/alembic.ini upgrade head"
   }

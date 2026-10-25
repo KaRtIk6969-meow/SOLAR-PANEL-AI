@@ -1,5 +1,5 @@
 {
-  "active_model_version": "lin_v20261020_135951",
+  "active_model_version": "lin_v20261021_055747",
   "models": [
     {
       "model_name": "LinearRegression",
@@ -59,6 +59,126 @@
       "rmse": 0.1264,
       "r2_score": 0.9995,
       "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_135951.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261020_161031",
+      "training_timestamp": "2026-10-20T16:10:31.604076+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_161031.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261020_172137",
+      "training_timestamp": "2026-10-20T17:21:37.433853+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_172137.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261020_182617",
+      "training_timestamp": "2026-10-20T18:26:17.318240+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261020_182617.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261021_041012",
+      "training_timestamp": "2026-10-21T04:10:12.124729+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261021_041012.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261021_054827",
+      "training_timestamp": "2026-10-21T05:48:27.339565+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 10,
+      "train_size": 8,
+      "test_size": 2,
+      "mae": 0.0422,
+      "rmse": 0.0581,
+      "r2_score": 0.9998,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261021_054827.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261021_055747",
+      "training_timestamp": "2026-10-21T05:57:47.284043+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261021_055747.joblib",
       "is_best": true
     }
   ]

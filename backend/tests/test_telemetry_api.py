@@ -323,3 +323,57 @@ def test_demo_test_packet_and_clear_isolation(client):
     assert stats_res2.json()["demo_records_count"] == 0
     assert stats_res2.json()["real_valid_records"] == 1  # Real hardware packet was untouched!
 
+
+def test_network_info_endpoint(client):
+    """Test retrieving server local network IPs and recommended telemetry target URL."""
+    res = client.get("/api/v1/devices/network-info")
+    assert res.status_code == status.HTTP_200_OK
+    data = res.json()
+    assert "primary_ip" in data
+    assert "port" in data
+    assert data["port"] == 8000
+    assert "telemetry_url" in data
+    assert ":8000/api/v1/telemetry" in data["telemetry_url"]
+    assert data["status"] == "operational"
+
+
+def test_device_online_stale_offline_transitions(client, db_session):
+    """Test ONLINE (<=60s), STALE (61-180s), and OFFLINE (>180s) status calculation."""
+    dev_id = "SOLAR-ESP32-TRANSITIONS"
+    now = datetime.now(timezone.utc)
+
+    # 1. Initially OFFLINE when never seen
+    s0 = client.get(f"/api/v1/devices/{dev_id}/status")
+    assert s0.status_code == status.HTTP_404_NOT_FOUND
+
+    # 2. Ingest recent packet -> ONLINE
+    client.post("/api/v1/telemetry", json={
+        "device_id": dev_id,
+        "timestamp": now.isoformat(),
+        "voltage_v": 18.0,
+        "current_a": 2.0,
+        "temperature_c": 30.0,
+        "irradiance_w_m2": 800.0
+    })
+    s1 = client.get(f"/api/v1/devices/{dev_id}/status")
+    assert s1.status_code == status.HTTP_200_OK
+    assert s1.json()["status"] == "ONLINE"
+    assert s1.json()["is_reporting"] is True
+
+    # 3. Simulate STALE (packet 90s ago)
+    from app.models.device import Device
+    d_obj = db_session.query(Device).filter(Device.id == dev_id).first()
+    d_obj.last_seen_at = now - timedelta(seconds=90)
+    db_session.commit()
+    s2 = client.get(f"/api/v1/devices/{dev_id}/status")
+    assert s2.json()["status"] == "STALE"
+    assert s2.json()["is_reporting"] is False
+
+    # 4. Simulate OFFLINE (packet 250s ago)
+    d_obj.last_seen_at = now - timedelta(seconds=250)
+    db_session.commit()
+    s3 = client.get(f"/api/v1/devices/{dev_id}/status")
+    assert s3.json()["status"] == "OFFLINE"
+    assert s3.json()["is_reporting"] is False
+
+
