@@ -43,6 +43,32 @@ def get_latest_health_score(device_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if not score:
+        from app.models.sensor_reading import SensorReading
+        from app.services.health_service import compute_and_record_health_score
+        from ml.predict import predict_power
+        latest_reading = (
+            db.query(SensorReading)
+            .filter(SensorReading.device_id == device_id, SensorReading.data_quality != "DEMO")
+            .order_by(SensorReading.timestamp.desc())
+            .first()
+        )
+        if latest_reading:
+            try:
+                pred_out = predict_power({
+                    "voltage_v": latest_reading.voltage_v,
+                    "current_a": latest_reading.current_a,
+                    "temperature_c": latest_reading.temperature_c,
+                    "irradiance_w_m2": latest_reading.irradiance_w_m2,
+                })
+                pred_w = pred_out["predicted_power_w"]
+                res = round(latest_reading.power_w - pred_w, 2)
+                score = compute_and_record_health_score(db, device_id, latest_reading, res, pred_w)
+                db.commit()
+                db.refresh(score)
+            except Exception:
+                pass
+
+    if not score:
         raise HTTPException(status_code=404, detail="No health evaluations recorded for this device.")
     return score
 

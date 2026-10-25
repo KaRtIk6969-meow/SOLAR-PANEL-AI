@@ -5,8 +5,11 @@ from sqlalchemy import func
 from app.models.sensor_reading import SensorReading, TelemetryReading
 from app.models.device import Device
 from app.models.alert import Alert
+from app.models.prediction import Prediction
 from app.schemas.telemetry import TelemetryCreate, DashboardDataResponse, TelemetryResponse
 from app.services.device_service import get_or_create_device, compute_device_status
+from app.services.health_service import compute_and_record_health_score
+from ml.predict import predict_power, NoModelAvailableError
 
 
 class DuplicateRecordException(Exception):
@@ -137,16 +140,84 @@ def record_telemetry(db: Session, telemetry_in: TelemetryCreate) -> SensorReadin
     db.commit()
     db.refresh(reading)
 
+    # 8. Live AI Inference, Prediction Persistence & Physical Health Scoring
+    if quality_tag != "DEMO":
+        try:
+            pred_out = predict_power({
+                "voltage_v": reading.voltage_v,
+                "current_a": reading.current_a,
+                "temperature_c": reading.temperature_c,
+                "irradiance_w_m2": reading.irradiance_w_m2,
+            })
+            pred_w = pred_out["predicted_power_w"]
+            model_ver = pred_out["model_version"]
+            residual = round(reading.power_w - pred_w, 2)
+            dev_pct = round((residual / pred_w) * 100.0, 2) if pred_w > 0 else 0.0
+
+            alert_st = "CRITICAL" if quality_tag == "OVERHEATING" else ("WARNING" if is_anomaly else "NORMAL")
+            prediction_entry = Prediction(
+                device_id=reading.device_id,
+                timestamp=reading.timestamp,
+                target="power_w",
+                predicted_value=pred_w,
+                actual_value=reading.power_w,
+                residual=residual,
+                deviation_pct=dev_pct,
+                alert_status=alert_st,
+                model_version=model_ver,
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(prediction_entry)
+
+            # Persist real hardware health score
+            compute_and_record_health_score(db, reading.device_id, reading, residual, pred_w)
+            db.commit()
+
+            # Attach prediction values to reading instance for API response
+            reading.predicted_power_w = pred_w
+            reading.residual = residual
+            reading.model_version = model_ver
+        except NoModelAvailableError:
+            pass
+        except Exception:
+            # Telemetry ingestion must not fail if ML inference encounters an issue
+            pass
+
     return reading
 
 
 def get_latest_reading(db: Session, device_id: str) -> Optional[SensorReading]:
-    return (
+    reading = (
         db.query(SensorReading)
         .filter(SensorReading.device_id == device_id)
         .order_by(SensorReading.timestamp.desc())
         .first()
     )
+    if reading:
+        pred = (
+            db.query(Prediction)
+            .filter(Prediction.device_id == device_id, Prediction.timestamp == reading.timestamp)
+            .first()
+        )
+        if pred:
+            reading.predicted_power_w = pred.predicted_value
+            reading.residual = pred.residual
+            reading.model_version = pred.model_version
+        elif reading.data_quality != "DEMO":
+            # If historical record didn't have prediction, compute on-the-fly
+            try:
+                pred_out = predict_power({
+                    "voltage_v": reading.voltage_v,
+                    "current_a": reading.current_a,
+                    "temperature_c": reading.temperature_c,
+                    "irradiance_w_m2": reading.irradiance_w_m2,
+                })
+                reading.predicted_power_w = pred_out["predicted_power_w"]
+                reading.residual = round(reading.power_w - pred_out["predicted_power_w"], 2)
+                reading.model_version = pred_out["model_version"]
+            except Exception:
+                pass
+    return reading
 
 
 def get_historical_telemetry(
@@ -163,7 +234,36 @@ def get_historical_telemetry(
     if end_time:
         query = query.filter(SensorReading.timestamp <= end_time)
 
-    return query.order_by(SensorReading.timestamp.desc()).limit(limit).all()
+    readings = query.order_by(SensorReading.timestamp.desc()).limit(limit).all()
+    if readings:
+        timestamps = [r.timestamp for r in readings]
+        preds = (
+            db.query(Prediction)
+            .filter(Prediction.device_id == device_id, Prediction.timestamp.in_(timestamps))
+            .all()
+        )
+        preds_map = {p.timestamp: p for p in preds}
+        for r in readings:
+            p = preds_map.get(r.timestamp)
+            if p:
+                r.predicted_power_w = p.predicted_value
+                r.residual = p.residual
+                r.model_version = p.model_version
+            elif r.data_quality != "DEMO":
+                try:
+                    pred_out = predict_power({
+                        "voltage_v": r.voltage_v,
+                        "current_a": r.current_a,
+                        "temperature_c": r.temperature_c,
+                        "irradiance_w_m2": r.irradiance_w_m2,
+                    })
+                    r.predicted_power_w = pred_out["predicted_power_w"]
+                    r.residual = round(r.power_w - pred_out["predicted_power_w"], 2)
+                    r.model_version = pred_out["model_version"]
+                except Exception:
+                    pass
+
+    return readings
 
 
 def get_dashboard_summary(db: Session, device_id: str) -> DashboardDataResponse:

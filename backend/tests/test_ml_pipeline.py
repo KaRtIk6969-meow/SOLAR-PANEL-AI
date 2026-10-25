@@ -255,7 +255,7 @@ def test_predict_errors(tmp_path):
 # 6. FastAPI ML Endpoint Tests
 # -------------------------------------------------------------
 
-def test_ml_api_endpoints_insufficient_and_sufficient_flow(client, db_session):
+def test_ml_api_endpoints_insufficient_and_sufficient_flow(client, db_session, tmp_path):
     """
     Test full HTTP flow:
     - POST /api/v1/ml/train returns 400 when insufficient data
@@ -266,70 +266,81 @@ def test_ml_api_endpoints_insufficient_and_sufficient_flow(client, db_session):
     - GET /api/v1/ml/models returns list of registered models
     - POST /api/v1/ml/predict returns valid power prediction
     """
-    # 1. Train on empty DB -> 400 Insufficient Data
-    train_res = client.post("/api/v1/ml/train", json={})
-    assert train_res.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Insufficient real telemetry data" in train_res.json()["detail"]
+    from app.main import app as fastapi_app
+    from app.api.v1.ml import get_registry
+    test_reg = ModelRegistry(base_dir=tmp_path / "test_ml_reg")
+    fastapi_app.dependency_overrides[get_registry] = lambda: test_reg
 
-    # 2. Status initially
-    status_res = client.get("/api/v1/ml/status")
-    assert status_res.status_code == status.HTTP_200_OK
+    try:
+        # 1. Train on empty DB -> 400 Insufficient Data
+        train_res = client.post("/api/v1/ml/train", json={})
+        assert train_res.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Insufficient real telemetry data" in train_res.json()["detail"]
 
-    # 3. Predict before model trained -> 404 (if no model in default registry)
-    # Note: If no model exists, predict returns 404
-    # (unless a model was previously persisted in default registry)
+        # 2. Status initially with fresh test registry
+        status_res = client.get("/api/v1/ml/status")
+        assert status_res.status_code == status.HTTP_200_OK
+        assert status_res.json()["model_available"] is False
 
-    # 4. Insert 15 valid telemetry records
-    dev = Device(id="SOLAR-ESP32-01", name="Solar Node", rated_power_w=50.0)
-    db_session.add(dev)
-    db_session.commit()
+        # 3. Predict before model trained -> 404 in isolated test registry
+        pred_before = client.post("/api/v1/ml/predict", json={
+            "voltage_v": 18.0, "current_a": 2.0, "temperature_c": 30.0, "irradiance_w_m2": 800.0
+        })
+        assert pred_before.status_code == status.HTTP_404_NOT_FOUND
 
-    now = datetime.now(timezone.utc)
-    for i in range(15):
-        v = 18.0 + (i * 0.1)
-        curr = 2.0 + (i * 0.05)
-        rec = SensorReading(
-            device_id="SOLAR-ESP32-01",
-            timestamp=now - timedelta(minutes=i),
-            voltage_v=v,
-            current_a=curr,
-            temperature_c=30.0 + (i * 0.2),
-            irradiance_w_m2=800.0 + (i * 5.0),
-            power_w=round(v * curr, 2),
-            data_quality="GOOD",
-        )
-        db_session.add(rec)
-    db_session.commit()
+        # 4. Insert 15 valid telemetry records
+        dev = Device(id="SOLAR-ESP32-01", name="Solar Node", rated_power_w=50.0)
+        db_session.add(dev)
+        db_session.commit()
 
-    # 5. Train with sufficient records -> 200 OK
-    train_res = client.post("/api/v1/ml/train", json={"device_id": "SOLAR-ESP32-01"})
-    assert train_res.status_code == status.HTTP_200_OK
-    data = train_res.json()
-    assert data["status"] == "success"
-    assert "best_model_name" in data["report"]
-    assert data["report"]["dataset_summary"]["total_samples"] == 15
+        now = datetime.now(timezone.utc)
+        for i in range(15):
+            v = 18.0 + (i * 0.1)
+            curr = 2.0 + (i * 0.05)
+            rec = SensorReading(
+                device_id="SOLAR-ESP32-01",
+                timestamp=now - timedelta(minutes=i),
+                voltage_v=v,
+                current_a=curr,
+                temperature_c=30.0 + (i * 0.2),
+                irradiance_w_m2=800.0 + (i * 5.0),
+                power_w=round(v * curr, 2),
+                data_quality="GOOD",
+            )
+            db_session.add(rec)
+        db_session.commit()
 
-    # 6. Status check
-    status_res = client.get("/api/v1/ml/status")
-    assert status_res.status_code == status.HTTP_200_OK
-    assert status_res.json()["model_available"] is True
+        # 5. Train with sufficient records -> 200 OK
+        train_res = client.post("/api/v1/ml/train", json={"device_id": "SOLAR-ESP32-01"})
+        assert train_res.status_code == status.HTTP_200_OK
+        data = train_res.json()
+        assert data["status"] == "success"
+        assert "best_model_name" in data["report"]
+        assert data["report"]["dataset_summary"]["total_samples"] == 15
 
-    # 7. List models
-    models_res = client.get("/api/v1/ml/models")
-    assert models_res.status_code == status.HTTP_200_OK
-    assert isinstance(models_res.json(), list)
-    assert len(models_res.json()) >= 1
+        # 6. Status check
+        status_res = client.get("/api/v1/ml/status")
+        assert status_res.status_code == status.HTTP_200_OK
+        assert status_res.json()["model_available"] is True
 
-    # 8. Run prediction via API
-    pred_res = client.post("/api/v1/ml/predict", json={
-        "voltage_v": 18.4,
-        "current_a": 2.2,
-        "temperature_c": 31.5,
-        "irradiance_w_m2": 820.0,
-    })
-    assert pred_res.status_code == status.HTTP_200_OK
-    pred_data = pred_res.json()
-    assert "predicted_power_w" in pred_data
-    assert pred_data["predicted_power_w"] > 0.0
-    assert "model_name" in pred_data
-    assert "model_version" in pred_data
+        # 7. List models
+        models_res = client.get("/api/v1/ml/models")
+        assert models_res.status_code == status.HTTP_200_OK
+        assert isinstance(models_res.json(), list)
+        assert len(models_res.json()) >= 1
+
+        # 8. Run prediction via API
+        pred_res = client.post("/api/v1/ml/predict", json={
+            "voltage_v": 18.4,
+            "current_a": 2.2,
+            "temperature_c": 31.5,
+            "irradiance_w_m2": 820.0,
+        })
+        assert pred_res.status_code == status.HTTP_200_OK
+        pred_data = pred_res.json()
+        assert "predicted_power_w" in pred_data
+        assert pred_data["predicted_power_w"] > 0.0
+        assert "model_name" in pred_data
+        assert "model_version" in pred_data
+    finally:
+        fastapi_app.dependency_overrides.pop(get_registry, None)

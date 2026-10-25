@@ -120,6 +120,9 @@ class TelemetryResponse(BaseModel):
     firmware_version: Optional[str] = "1.0.0"
     is_anomaly: bool = False
     anomaly_notes: Optional[str] = None
+    predicted_power_w: Optional[float] = None
+    residual: Optional[float] = None
+    model_version: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

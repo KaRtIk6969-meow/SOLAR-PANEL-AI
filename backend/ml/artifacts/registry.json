@@ -1,5 +1,5 @@
 {
-  "active_model_version": "lin_v20261021_055747",
+  "active_model_version": "xgb_v20261025_180246",
   "models": [
     {
       "model_name": "LinearRegression",
@@ -179,6 +179,106 @@
       "rmse": 0.1264,
       "r2_score": 0.9995,
       "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261021_055747.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "XGBRegressor",
+      "model_version": "xgb_v20261025_175216",
+      "training_timestamp": "2026-10-25T17:52:16.042505+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 854,
+      "train_size": 684,
+      "test_size": 170,
+      "mae": 0.1319,
+      "rmse": 0.2422,
+      "r2_score": 0.9849,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\xgb_v20261025_175216.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261025_175611",
+      "training_timestamp": "2026-10-25T17:56:11.639062+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261025_175611.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "LinearRegression",
+      "model_version": "lin_v20261025_175756",
+      "training_timestamp": "2026-10-25T17:57:56.230419+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 15,
+      "train_size": 12,
+      "test_size": 3,
+      "mae": 0.1061,
+      "rmse": 0.1264,
+      "r2_score": 0.9995,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\lin_v20261025_175756.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "XGBRegressor",
+      "model_version": "xgb_v20261025_175934",
+      "training_timestamp": "2026-10-25T17:59:34.672923+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 978,
+      "train_size": 783,
+      "test_size": 195,
+      "mae": 0.1045,
+      "rmse": 0.1925,
+      "r2_score": 0.9902,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\xgb_v20261025_175934.joblib",
+      "is_best": false
+    },
+    {
+      "model_name": "XGBRegressor",
+      "model_version": "xgb_v20261025_180246",
+      "training_timestamp": "2026-10-25T18:02:46.396063+00:00",
+      "feature_names": [
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "irradiance_w_m2"
+      ],
+      "target_name": "power_w",
+      "dataset_size": 1028,
+      "train_size": 823,
+      "test_size": 205,
+      "mae": 0.1385,
+      "rmse": 0.294,
+      "r2_score": 0.9784,
+      "artifact_path": "C:\\Users\\Kartik Sharma\\OneDrive\\Desktop\\solar-panel-ai\\backend\\ml\\models\\xgb_v20261025_180246.joblib",
       "is_best": true
     }
   ]

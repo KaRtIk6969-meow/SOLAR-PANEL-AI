@@ -61,7 +61,7 @@ export default function PredictionPage() {
         </div>
 
         <span className="px-3 py-1 rounded-xl text-xs font-semibold bg-purple-500/15 border border-purple-500/30 text-purple-300">
-          Model: XGBoost v1.4
+          Model: {modelEval?.modelName || 'AI Regressor'} ({modelEval?.version || 'Active'})
         </span>
       </div>
 
@@ -75,7 +75,9 @@ export default function PredictionPage() {
             </span>
             <span className="text-xs text-slate-400">Watts</span>
           </div>
-          <span className="text-[11px] text-purple-400">Target generation</span>
+          <span className="text-[11px] text-purple-400">
+            {modelEval?.rmse != null ? `Model RMSE: ${modelEval.rmse.toFixed(2)} W` : 'Target generation'}
+          </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
@@ -93,22 +95,26 @@ export default function PredictionPage() {
           <span className="text-xs text-slate-400">Model Residual (Delta)</span>
           <div className="flex items-baseline gap-1">
             <span className={`text-2xl font-extrabold font-mono ${telemetry?.residual != null && telemetry.residual < -2 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {telemetry?.residual != null ? (telemetry.residual > 0 ? `+${telemetry.residual.toFixed(1)}` : telemetry.residual.toFixed(1)) : '--'}
+              {telemetry?.residual != null ? (telemetry.residual > 0 ? `+${telemetry.residual.toFixed(2)}` : telemetry.residual.toFixed(2)) : '--'}
             </span>
             <span className="text-xs text-slate-400">Watts</span>
           </div>
-          <span className="text-[11px] text-slate-400">Deviation from prediction</span>
+          <span className="text-[11px] text-slate-400">
+            {modelEval?.mae != null ? `Model MAE: ${modelEval.mae.toFixed(2)} W` : 'Deviation from prediction'}
+          </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-1">
           <span className="text-xs text-slate-400">Coefficient of Determination</span>
           <div className="flex items-baseline gap-1">
             <span className="text-2xl font-extrabold text-white font-mono">
-              {modelEval?.r2Score ?? '0.976'}
+              {modelEval?.r2Score != null ? modelEval.r2Score.toFixed(4) : '--'}
             </span>
             <span className="text-xs text-purple-400 font-semibold">R²</span>
           </div>
-          <span className="text-[11px] text-emerald-400">97.6% accuracy fit</span>
+          <span className="text-[11px] text-emerald-400">
+            {modelEval?.r2Score != null ? `${(modelEval.r2Score * 100).toFixed(1)}% accuracy fit` : 'Real test fit'}
+          </span>
         </div>
       </div>
 

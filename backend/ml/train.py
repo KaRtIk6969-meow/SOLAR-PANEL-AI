@@ -40,12 +40,24 @@ class TrainingReport:
     training_timestamp: str
 
     def to_dict(self) -> Dict[str, Any]:
+        models_dict = {
+            m["model_name"]: {
+                "mae": m["mae"],
+                "rmse": m["rmse"],
+                "r2_score": m["r2_score"],
+            }
+            for m in self.all_models
+        }
         return {
             "best_model_name": self.best_model_name,
             "best_model_version": self.best_model_version,
             "best_metrics": self.best_metrics,
             "dataset_summary": self.dataset_summary,
             "all_models": self.all_models,
+            "dataset_size": self.dataset_summary.get("total_samples", 0),
+            "train_samples": self.dataset_summary.get("train_samples", 0),
+            "test_samples": self.dataset_summary.get("test_samples", 0),
+            "models": models_dict,
             "training_timestamp": self.training_timestamp,
         }
 

@@ -26,6 +26,9 @@ export interface BackendTelemetryResponse {
   firmware_version?: string;
   is_anomaly: boolean;
   anomaly_notes: string | null;
+  predicted_power_w?: number | null;
+  residual?: number | null;
+  model_version?: string | null;
   created_at: string;
 }
 
@@ -87,6 +90,34 @@ export interface BackendTrainResponse {
       r2_score: number;
     }>;
   };
+}
+
+export interface BackendModelMetadata {
+  model_name: string;
+  model_version: string;
+  training_timestamp: string;
+  feature_names: string[];
+  target_name: string;
+  dataset_size: number;
+  train_size: number;
+  test_size: number;
+  mae: number;
+  rmse: number;
+  r2_score: number;
+  artifact_path?: string;
+  is_best?: boolean;
+}
+
+export interface BackendModelStatusResponse {
+  model_available: boolean;
+  active_model: BackendModelMetadata | null;
+  message: string;
+}
+
+export interface BackendPredictResponse {
+  predicted_power_w: number;
+  model_name: string;
+  model_version: string;
 }
 
 
@@ -387,6 +418,43 @@ export async function trainModels(deviceId?: string): Promise<{ success: boolean
   }
 }
 
+/**
+ * Fetch active AI model deployment status and benchmark metrics
+ */
+export async function getModelStatus(): Promise<BackendModelStatusResponse | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/ml/status`, {}, 3000);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn('[SolarAI API] getModelStatus error:', err);
+    return null;
+  }
+}
+
+/**
+ * Execute real-time power prediction via backend ML model
+ */
+export async function predictPower(features: {
+  voltage_v: number;
+  current_a: number;
+  temperature_c: number;
+  irradiance_w_m2: number;
+}): Promise<BackendPredictResponse | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/ml/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(features),
+    }, 4000);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.warn('[SolarAI API] predictPower error:', err);
+    return null;
+  }
+}
+
 // -------------------------------------------------------------
 // Data Adapters: Backend Format -> Frontend Domain Types
 // -------------------------------------------------------------
@@ -396,8 +464,9 @@ export function mapBackendTelemetryToDomain(
   predictedPower?: number
 ): TelemetryReading {
   const power = item.power_w;
-  const pred = predictedPower ?? Math.round(power * 1.05 * 10) / 10;
-  const residual = Math.round((power - pred) * 100) / 100;
+  // Prioritize real ML prediction from backend, then explicit parameter, then power fallback
+  const pred = item.predicted_power_w ?? predictedPower ?? power;
+  const residual = item.residual ?? Math.round((power - pred) * 100) / 100;
 
   return {
     id: String(item.id),
