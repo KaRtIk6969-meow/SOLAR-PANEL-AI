@@ -181,6 +181,12 @@ class ModelRegistry:
             "message": "No trained model currently available. Train a model using POST /api/v1/ml/train.",
         }
 
+    def get_active_model_metadata(self) -> Optional[Dict[str, Any]]:
+        """Convenience accessor to get active model metadata dict or None."""
+        status = self.get_status()
+        return status.get("active_model")
+
+
 
 # Global registry instance
 default_registry = ModelRegistry()

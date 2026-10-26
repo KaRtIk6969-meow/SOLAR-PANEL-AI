@@ -293,8 +293,9 @@ def get_dashboard_summary(db: Session, device_id: str) -> DashboardDataResponse:
 
     if today_readings:
         today_peak_power_w = max(r.power_w for r in today_readings)
-        # Approximate trapezoidal / interval integration: assume typical reporting cadence (10s intervals)
-        today_energy_wh = sum(r.power_w * (10.0 / 3600.0) for r in today_readings)
+        # Use numerical trapezoidal integration from analytics service
+        from app.services.analytics_service import calculate_energy_wh_integration
+        today_energy_wh = calculate_energy_wh_integration(today_readings)
         efficiencies = [r.efficiency_pct for r in today_readings if r.efficiency_pct is not None]
 
     avg_efficiency = round(sum(efficiencies) / len(efficiencies), 2) if efficiencies else None
